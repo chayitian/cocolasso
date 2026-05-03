@@ -1,0 +1,2 @@
+# cocolasso
+参考BDCoCoLasso作者的R语言包实现的CoCoLasso，并拓展到AdaCoCoLasso（自适应CoCoLasso）
