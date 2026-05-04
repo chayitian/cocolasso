@@ -142,10 +142,11 @@ def run_cocolasso(Z: np.ndarray, y: np.ndarray, n: int, p: int,
 
 
 def run_ncl(Z: np.ndarray, y: np.ndarray, n: int, p: int,
-            tau: float, error_type: str) -> np.ndarray:
+            tau: float, error_type: str, seed: int = 42) -> np.ndarray:
     ncl_result = ncl_method(
         Z=Z, y=y, n=n, p=p, tau=tau,
-        noise=error_type, K=K_FOLDS, step=100, n_R=100
+        noise=error_type, K=K_FOLDS, step=100, n_R=100,
+        seed=seed
     )
     return ncl_result["beta"]
 
@@ -166,7 +167,7 @@ def run_single_experiment(error_type: str,
         beta_cocolasso = run_cocolasso(Z, y, n, p, tau, error_type)
         results["CoCoLasso"] = compute_metrics(beta_cocolasso, BETA_TRUE, Sigma_X)
     if "NCL" in methods:
-        beta_ncl = run_ncl(Z, y, n, p, tau, error_type)
+        beta_ncl = run_ncl(Z, y, n, p, tau, error_type, seed=seed)
         results["NCL"] = compute_metrics(beta_ncl, BETA_TRUE, Sigma_X)
 
     return results
