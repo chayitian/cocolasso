@@ -2,20 +2,18 @@
 
 ## 概述
 
-NCL (Nonconvex Lasso) 是基于 Datta & Zou (2017) 论文提出的测量误差模型方法，用于高维误差变量回归问题。本实现提供了完整的 NCL 算法及与 CoCoLasso 对比的模拟实验框架。
+NCL (Nonconvex Lasso) 是基于 Datta & Zou (2017) 论文提出的测量误差模型方法，用于高维误差变量回归问题。本实现提供了完整的 NCL 算法，**完全独立实现，不依赖 CoCoLasso**。
 
 ## 项目结构
 
 ```
 cocolasso/
 ├── src/
-│   ├── __init__.py          # 包入口，导出所有公共 API
-│   ├── cocolasso.py         # CoCoLasso 核心实现
-│   └── ncl.py               # NCL 核心实现
+│   ├── __init__.py          # 包入口，导出 NCL 公共 API
+│   └── ncl.py               # NCL 核心实现（独立）
 ├── test/
-│   ├── cocolasso_simulation.py  # CoCoLasso 模拟实验
-│   └── ncl_simulation.py       # NCL 模拟实验
-└── README.md
+│   └── ncl_simulation.py    # NCL 模拟实验（独立）
+└── NCL说明文档.md
 ```
 
 ## 依赖
@@ -29,26 +27,29 @@ cocolasso/
 ### 导入模块
 
 ```python
-from src import ncl_method, coco, cov_autoregressive
+from src import ncl_method
 ```
 
 ### 基本使用
 
 ```python
 import numpy as np
-from src import ncl_method, simulate_data
+from src import ncl_method
 
-# 生成测试数据
-data = simulate_data(n=200, p=200, tau=0.3, noise="additive", seed=42)
-Z, y, X, beta = data["Z"], data["y"], data["X"], data["beta"]
+# 构造带误差的观测矩阵 Z 和响应变量 y
+# Z = X + A, 其中 A ~ N(0, tau^2)
+Z = ...  # (n, p) 观测设计矩阵
+y = ...  # (n,) 响应变量
 
 # 运行 NCL
 result = ncl_method(
     Z=Z, y=y, n=200, p=200, tau=0.3,
-    noise="additive", K=5, step=100, n_R=100
+    noise="additive", K=5, step=100, n_R=100, seed=42
 )
 
 beta_hat = result["beta"]
+lambda_opt = result["lambda_val"]
+R_opt = result["R"]
 ```
 
 ## API 文档
@@ -78,9 +79,9 @@ ncl_method(Z, y, n, p, tau, noise="additive", K=5, step=100, n_R=100, seed=42)
 
 ```python
 {
-    "beta": ndarray,      # 估计系数
-    "lambda": float,      # 最优 lambda
-    "R": float            # 最优 L1 约束半径
+    "beta": ndarray,         # 估计系数
+    "lambda_val": float,     # 最优 lambda
+    "R": float               # 最优 L1 约束半径
 }
 ```
 
@@ -96,17 +97,35 @@ $$\min_{\beta} \frac{1}{2}\beta^T\Gamma\beta - \rho^T\beta + \lambda\|\beta\|_1 
 
 ### `naive_lasso_cv` - 朴素 Lasso 交叉验证
 
-用于初始化 NCL 的 R 参数。
+```python
+naive_lasso_cv(Z, y, n, p, K=5, step=100, seed=42)
+```
+
+用于初始化 NCL 的 R 参数。使用 `np.random.RandomState(seed)` 管理随机种子，确保可重复性。
 
 ### `compute_corrected_covariance_additive` - 加性误差修正协方差
 
 ```python
-compute_corrected_covariance_additive(Z, y, n, tau)
+compute_corrected_covariance_additive(Z, y, n, tau, ensure_psd=True)
 ```
 
 计算：
 - $\tilde{\Sigma} = \frac{1}{n}Z^TZ - \tau^2 I$
 - $\tilde{\rho} = \frac{1}{n}Z^Ty$
+
+当 `ensure_psd=True` 时，对修正后的协方差矩阵做正定性修正（特征值截断），确保 $\tilde{\Sigma} \succeq 0$。
+
+### 内部辅助函数
+
+以下函数为 NCL 内部使用，不作为公共 API 导出：
+
+| 函数 | 说明 |
+|------|------|
+| `_l1_proj(v, b)` | L1 球投影（Duchi et al. 2008） |
+| `_log_space(start, stop, num)` | 对数等比序列生成 |
+| `_lasso_covariance(p, lambda_val, Sigma, rho, ...)` | 协方差形式 Lasso 坐标下降 |
+| `_ensure_positive_semidefinite(mat, epsilon)` | 矩阵正定性修正（特征值截断） |
+| `_corrected_covariance_multiplicative(Z, y, n, p, tau)` | 乘性误差修正协方差 |
 
 ## 模拟实验
 
@@ -126,7 +145,7 @@ compute_corrected_covariance_additive(Z, y, n, tau)
 ### 协方差结构
 
 - **AR (自回归)**: $\Sigma_{ij} = \rho^{|i-j|}$, $\rho=0.5$
-- **CS (复合对称)**: $\Sigma_{ij} = \rho$ (非对角线), $\Sigma_{ii} = 1$, $\rho=0.5$
+- **CS (复合对称)**: $\Sigma_{ii} = 1$, $\Sigma_{ij} = \rho$ (非对角线), $\rho=0.5$
 
 ### 误差类型与 tau 值
 
@@ -174,28 +193,31 @@ python test/ncl_simulation.py --mode full --n_mc 50 --n_bootstrap 200
 | 优化目标 | 非凸 + L1 约束 | 凸修正 + L1 惩罚 |
 | 参数选择 | 网格搜索 (lambda, R) | 交叉验证 (lambda) |
 | 计算复杂度 | 较高（双层网格搜索） | 较低（单层路径算法） |
+| 协方差修正 | 减去 tau^2*I（可能非正定） | 投影到 PSD 锥 |
 | 理论保证 | 需要已知 tau | 需要已知 tau |
 
 ### 对比实验
 
+当 CoCoLasso 实现完成后，可在相同数据下对比两种方法：
+
 ```python
-from src import ncl_method, coco
+from src import ncl_method
+# from src import coco  # 待 CoCoLasso 实现后启用
 
-# 相同数据下对比两种方法
-ncl_result = ncl_method(Z, y, n, p, tau, noise="additive")
-coco_result = coco(Z, y, n, p, tau=tau, noise="additive", block=False)
+ncl_result = ncl_method(Z, y, n, p, tau, noise="additive", seed=42)
+# coco_result = coco(Z, y, n, p, tau=tau, noise="additive", block=False)
 
-# 比较系数估计
 print("NCL beta:", ncl_result["beta"][:5])
-print("CoCoLasso beta:", coco_result["beta_opt"][:5])
 ```
 
 ## 注意事项
 
 1. **tau 参数**：NCL 需要预先知道测量误差的标准差 tau
-2. **计算时间**：NCL 的双层网格搜索（lambda × R）计算量较大
-3. **numpy 版本**：需要 numpy >= 1.15.0（使用 `np.quantile`）
-4. **Python 版本**：需要 Python >= 3.7（使用 `sys.stdout.reconfigure`）
+2. **计算时间**：NCL 的双层网格搜索（lambda × R）计算量较大，100×100×5=50,000 次坐标下降
+3. **正定性修正**：修正协方差矩阵可能非正定，已自动进行特征值截断修正
+4. **随机种子**：使用 `np.random.RandomState` 管理种子，不影响全局随机状态
+5. **numpy 版本**：需要 numpy >= 1.15.0
+6. **Python 版本**：需要 Python >= 3.7（使用 `sys.stdout.reconfigure`）
 
 ## 参考文献
 

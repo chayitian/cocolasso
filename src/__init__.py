@@ -1,18 +1,8 @@
 """
 CoCoLasso 源代码包入口。
-"""
 
-from .cocolasso import (
-    coco,
-    generalcoco,
-    cov_autoregressive,
-    simulate_data,
-    admm_proj,
-    hm_proj,
-    lasso_covariance,
-    pathwise_coordinate_descent,
-    blockwise_coordinate_descent,
-)
+当前仅导出 NCL 模块，CoCoLasso 模块待后续添加。
+"""
 
 from .ncl import (
     ncl_method,
@@ -22,17 +12,6 @@ from .ncl import (
 )
 
 __all__ = [
-    # CoCoLasso
-    "coco",
-    "generalcoco",
-    "cov_autoregressive",
-    "simulate_data",
-    "admm_proj",
-    "hm_proj",
-    "lasso_covariance",
-    "pathwise_coordinate_descent",
-    "blockwise_coordinate_descent",
-    # NCL
     "ncl_method",
     "ncl_coordinate_descent",
     "naive_lasso_cv",

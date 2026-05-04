@@ -9,6 +9,8 @@ NCL (Nonconvex Lasso) 模拟实验
 - 误差类型：加性测量误差 和 乘性测量误差
 - 评价指标：C, IC, SE, PE
 - 100次蒙特卡洛重复，报告中位数及bootstrap标准误
+
+本模块完全独立实现，不依赖 CoCoLasso。
 """
 
 import numpy as np
@@ -20,7 +22,6 @@ sys.stdout.reconfigure(line_buffering=True)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from ncl import ncl_method
-from cocolasso import cov_autoregressive
 
 
 # ============================================================
@@ -47,12 +48,45 @@ ZERO_THRESHOLD = 1e-6
 
 
 # ============================================================
-# 数据生成
+# 协方差矩阵生成（独立实现）
 # ============================================================
 
+def cov_autoregressive(p: int, rho: float = 0.5) -> np.ndarray:
+    """
+    生成自回归 (AR) 协方差矩阵。
+
+    Sigma_ij = rho^|i-j|
+
+    Parameters
+    ----------
+    p : int, 特征数
+    rho : float, 自回归参数 (默认 0.5)
+
+    Returns
+    -------
+    cov : (p, p) array, AR 协方差矩阵
+    """
+    idx = np.arange(p)
+    return rho ** np.abs(idx[:, None] - idx[None, :])
+
+
 def generate_cs_covariance(p: int, rho: float = 0.5) -> np.ndarray:
+    """
+    生成复合对称 (CS) 协方差矩阵。
+
+    Sigma_ii = 1, Sigma_ij = rho (i != j)
+
+    Parameters
+    ----------
+    p : int, 特征数
+    rho : float, 非对角线相关系数 (默认 0.5)
+
+    Returns
+    -------
+    Sigma : (p, p) array, CS 协方差矩阵
+    """
     Sigma = np.full((p, p), rho)
-    np.fill_diagonal(Sigma, rho + 0.5)
+    np.fill_diagonal(Sigma, 1.0)
     return Sigma
 
 
@@ -64,6 +98,10 @@ def generate_covariance(p: int, cov_type: str = "AR", rho: float = 0.5) -> np.nd
     else:
         raise ValueError(f"Unknown cov_type: {cov_type}")
 
+
+# ============================================================
+# 数据生成
+# ============================================================
 
 def generate_data(n: int, p: int, beta: np.ndarray, sigma: float,
                   Sigma_X: np.ndarray, seed: int) -> tuple:
@@ -132,7 +170,8 @@ def run_single_experiment(cov_type: str, error_type: str,
 
     ncl_result = ncl_method(
         Z=Z, y=y, n=n, p=p, tau=tau,
-        noise=error_type, K=K_FOLDS, step=100, n_R=100
+        noise=error_type, K=K_FOLDS, step=100, n_R=100,
+        seed=seed
     )
     beta_hat = ncl_result["beta"]
 
