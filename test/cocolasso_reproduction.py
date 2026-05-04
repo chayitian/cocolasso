@@ -250,7 +250,7 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
                 parts = []
                 for m in methods:
                     short = "Coco" if m == "CoCoLasso" else "NCL"
-                    parts.append(f"{short} C={metrics[m]['C']} IC={metrics[m]['IC']}")
+                    parts.append(f"{short} C={metrics[m]['C']} IC={metrics[m]['IC']} PE={metrics[m]['PE']:.4f} SE={metrics[m]['SE']:.4f}")
                 print(f"  MC={mc+1}/{n_mc}  {'  '.join(parts)}  ({elapsed:.1f}s)")
 
         if not mc_results[methods[0]]["C"]:
@@ -264,7 +264,7 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
                 "Tau": tau,
             }
 
-            for key in ["C", "IC", "SE", "PE"]:
+            for key in ["C", "IC", "PE", "SE"]:
                 vals = np.array(mc_results[m][key])
                 row[f"{key}_median"] = np.median(vals)
                 row[f"{key}_se"] = bootstrap_se(vals, n_bootstrap)
@@ -277,7 +277,9 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
             short = "Coco" if m == "CoCoLasso" else "NCL"
             c_val = np.median(mc_results[m]["C"])
             ic_val = np.median(mc_results[m]["IC"])
-            summary_parts.append(f"{short} C={c_val:.1f} IC={ic_val:.1f}")
+            pe_val = np.median(mc_results[m]["PE"])
+            se_val = np.median(mc_results[m]["SE"])
+            summary_parts.append(f"{short} C={c_val:.1f} IC={ic_val:.1f} PE={pe_val:.4f} SE={se_val:.4f}")
         print(f"  => {'  '.join(summary_parts)}  [总耗时: {elapsed_total/60:.1f}min]")
 
     df = pd.DataFrame(all_results)
@@ -318,7 +320,7 @@ if __name__ == "__main__":
                         help="Bootstrap次数")
     args = parser.parse_args()
 
-    output_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'results')
 
     if args.mode == "quick":
         df = run_quick_test(method=args.method)
