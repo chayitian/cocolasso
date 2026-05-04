@@ -7,7 +7,7 @@ CoCoLasso 模拟实验
 - n=100, p=250, β*=(3,1.5,0,0,2,0,...,0), σ=3
 - 协方差结构：AR (自回归) 和 CS (复合对称)
 - 误差类型：加性测量误差 和 乘性测量误差
-- 评价指标：C, IC, SE, PE
+- 评价指标：C, IC, PE, SE
 - 100次蒙特卡洛重复，报告中位数及bootstrap标准误
 """
 
@@ -106,11 +106,11 @@ def compute_metrics(beta_hat: np.ndarray, beta_true: np.ndarray,
 
     C = int(np.sum(beta_hat_binary[NONZERO_IDX] == 1))
     IC = int(np.sum(beta_hat_binary[ZERO_IDX] == 1))
-    SE = float(np.sum((beta_true - beta_hat) ** 2))
     diff = beta_true - beta_hat
     PE = float(diff @ Sigma_X @ diff)
+    SE = float(np.sum(diff ** 2))
 
-    return {"C": C, "IC": IC, "SE": SE, "PE": PE}
+    return {"C": C, "IC": IC, "PE": PE, "SE": SE}
 
 
 def bootstrap_se(values: np.ndarray, n_bootstrap: int = 500) -> float:
@@ -189,7 +189,7 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
         print(f"\n[{si+1}/{total}] CoCoLasso | {cov_type} | {error_type} | τ={tau}")
         Sigma_X = generate_covariance(N_FEATURES, cov_type)
 
-        mc_results = {"C": [], "IC": [], "SE": [], "PE": []}
+        mc_results = {"C": [], "IC": [], "PE": [], "SE": []}
 
         for mc in range(n_mc):
             seed = mc + 1
@@ -208,7 +208,7 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
             elapsed = time.time() - t0
             if (mc + 1) % 10 == 0:
                 print(f"  MC={mc+1}/{n_mc}  C={metrics['C']}  IC={metrics['IC']}  "
-                      f"SE={metrics['SE']:.4f}  PE={metrics['PE']:.4f}  "
+                      f"PE={metrics['PE']:.4f}  SE={metrics['SE']:.4f}  "
                       f"({elapsed:.1f}s)")
 
         if not mc_results["C"]:
@@ -221,7 +221,7 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
             "Tau": tau,
         }
 
-        for key in ["C", "IC", "SE", "PE"]:
+        for key in ["C", "IC", "PE", "SE"]:
             vals = np.array(mc_results[key])
             row[f"{key}_median"] = np.median(vals)
             row[f"{key}_se"] = bootstrap_se(vals, n_bootstrap)
@@ -230,7 +230,7 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
 
         elapsed_total = time.time() - start_time
         print(f"  => C_median={row['C_median']:.1f}  IC_median={row['IC_median']:.1f}  "
-              f"SE_median={row['SE_median']:.4f}  PE_median={row['PE_median']:.4f}  "
+              f"PE_median={row['PE_median']:.4f}  SE_median={row['SE_median']:.4f}  "
               f"[总耗时: {elapsed_total/60:.1f}min]")
 
     df = pd.DataFrame(all_results)
@@ -267,7 +267,7 @@ if __name__ == "__main__":
                         help="Bootstrap次数")
     args = parser.parse_args()
 
-    output_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'results'))
 
     if args.mode == "quick":
         df = run_quick_test()
