@@ -19,8 +19,16 @@ import time
 sys.stdout.reconfigure(line_buffering=True)
 
 # 将 src 目录加入到系统路径中，以便能够正确导入 cocolasso
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from cocolasso import coco, cov_autoregressive
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src import coco
+
+
+def cov_autoregressive(p: int, rho: float = 0.5) -> np.ndarray:
+    cov = np.zeros((p, p))
+    for i in range(p):
+        for j in range(p):
+            cov[i, j] = rho ** abs(i - j)
+    return cov
 
 
 # ============================================================
