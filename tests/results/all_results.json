@@ -1,0 +1,412 @@
+{
+  "total_test_files": 5,
+  "total_assertions": 70,
+  "total_passed": 70,
+  "total_failed": 0,
+  "total_elapsed_sec": 5421.61,
+  "all_passed": true,
+  "per_file": [
+    {
+      "test_file": "test_utils.py",
+      "returncode": 0,
+      "elapsed_sec": 5.83,
+      "passed": true
+    },
+    {
+      "test_file": "test_cocolasso.py",
+      "returncode": 0,
+      "elapsed_sec": 92.79,
+      "passed": true
+    },
+    {
+      "test_file": "test_bdcocolasso.py",
+      "returncode": 1,
+      "elapsed_sec": 2969.86,
+      "passed": false
+    },
+    {
+      "test_file": "test_generalcocolasso.py",
+      "returncode": 1,
+      "elapsed_sec": 1.51,
+      "passed": false
+    },
+    {
+      "test_file": "test_solver_consistency.py",
+      "returncode": 1,
+      "elapsed_sec": 2351.62,
+      "passed": false
+    }
+  ],
+  "details": {
+    "test_utils.py": {
+      "module": "_utils",
+      "total": 39,
+      "passed": 39,
+      "failed": 0,
+      "elapsed_sec": 0.53,
+      "all_passed": true,
+      "details": [
+        {
+          "test": "l1_proj - L1范数约束",
+          "status": "PASS",
+          "detail": "L1=2.000000 <= 2.0"
+        },
+        {
+          "test": "l1_proj - 零向量输入",
+          "status": "PASS",
+          "detail": "output=[0. 0. 0. 0. 0.]"
+        },
+        {
+          "test": "l1_proj - 大向量投影",
+          "status": "PASS",
+          "detail": "L1=1.000000"
+        },
+        {
+          "test": "admm_proj - 输出PSD",
+          "status": "PASS",
+          "detail": "min_eigval=2.12e-01"
+        },
+        {
+          "test": "admm_proj - 对称性",
+          "status": "PASS",
+          "detail": "max_asym=1.11e-15"
+        },
+        {
+          "test": "admm_proj - 已PSD矩阵不变",
+          "status": "PASS",
+          "detail": "max_diff=0.00e+00"
+        },
+        {
+          "test": "admm_proj - 负定矩阵投影到PSD",
+          "status": "PASS",
+          "detail": "min_eigval=1.00e-06"
+        },
+        {
+          "test": "hm_proj - 输出PSD",
+          "status": "PASS",
+          "detail": "min_eigval=1.70e-01"
+        },
+        {
+          "test": "hm_proj - 对称性",
+          "status": "PASS",
+          "detail": "max_asym=8.88e-16"
+        },
+        {
+          "test": "hm_proj - 带R矩阵输出PSD",
+          "status": "PASS",
+          "detail": "min_eigval=1.70e-01"
+        },
+        {
+          "test": "scad_weight - |beta|<=lambda",
+          "status": "PASS",
+          "detail": "w=1.000000, expected=1.0"
+        },
+        {
+          "test": "scad_weight - lambda<|beta|<=a*lambda",
+          "status": "PASS",
+          "detail": "w=0.629630, expected=0.629630"
+        },
+        {
+          "test": "scad_weight - |beta|>a*lambda",
+          "status": "PASS",
+          "detail": "w=0.000000, expected=0.0"
+        },
+        {
+          "test": "lasso_covariance - 返回结构",
+          "status": "PASS",
+          "detail": "keys=['coefficients', 'num_it']"
+        },
+        {
+          "test": "lasso_covariance - 系数维度",
+          "status": "PASS",
+          "detail": "shape=(10,)"
+        },
+        {
+          "test": "lasso_covariance - 大lambda全零",
+          "status": "PASS",
+          "detail": "max_coef=0.00e+00"
+        },
+        {
+          "test": "lasso_covariance - SCAD惩罚",
+          "status": "PASS",
+          "detail": "nnz=5"
+        },
+        {
+          "test": "lasso_sklearn - 返回结构",
+          "status": "PASS",
+          "detail": "keys=['coefficients', 'num_it']"
+        },
+        {
+          "test": "lasso_sklearn - 系数维度",
+          "status": "PASS",
+          "detail": "shape=(10,)"
+        },
+        {
+          "test": "lasso_sklearn - 大lambda全零",
+          "status": "PASS",
+          "detail": "max_coef=0.00e+00"
+        },
+        {
+          "test": "lasso_sklearn - warm_start",
+          "status": "PASS",
+          "detail": "nnz=5"
+        },
+        {
+          "test": "solver_consistency - CD vs sklearn",
+          "status": "PASS",
+          "detail": "max_diff=1.35e-02, diffs=['1.35e-02', '3.18e-03', '8.62e-03', '0.00e+00']"
+        },
+        {
+          "test": "ratio_matrix - 形状",
+          "status": "PASS",
+          "detail": "shape=(5, 5)"
+        },
+        {
+          "test": "ratio_matrix - 对称性",
+          "status": "PASS",
+          "detail": "max_asym=0.00e+00"
+        },
+        {
+          "test": "ratio_matrix - 对角线<=1",
+          "status": "PASS",
+          "detail": "max_diag=1.0000"
+        },
+        {
+          "test": "ratio_matrix - 非负",
+          "status": "PASS",
+          "detail": "min_val=0.9000"
+        },
+        {
+          "test": "ratio_matrix - 无缺失时全为1",
+          "status": "PASS",
+          "detail": "max_diff_from_1=0.00e+00"
+        },
+        {
+          "test": "log_space - 长度",
+          "status": "PASS",
+          "detail": "len=100"
+        },
+        {
+          "test": "log_space - 起止值",
+          "status": "PASS",
+          "detail": "start=1.000000, end=0.001000"
+        },
+        {
+          "test": "log_space - 单调递减",
+          "status": "PASS",
+          "detail": "first_diff=0.067397"
+        },
+        {
+          "test": "multiplicative_corr - Gamma形状",
+          "status": "PASS",
+          "detail": "shape=(5, 5)"
+        },
+        {
+          "test": "multiplicative_corr - rho形状",
+          "status": "PASS",
+          "detail": "shape=(5,)"
+        },
+        {
+          "test": "multiplicative_corr - Gamma对称",
+          "status": "PASS",
+          "detail": "max_asym=4.16e-17"
+        },
+        {
+          "test": "multiplicative_corr - 校正公式正确",
+          "status": "PASS",
+          "detail": "max_diff=0.00e+00"
+        },
+        {
+          "test": "preprocess - 加性噪声返回键",
+          "status": "PASS",
+          "detail": "keys=['Z', 'y', 'mean_Z', 'sd_Z', 'mean_y', 'sd_y', 'ratio_matrix']"
+        },
+        {
+          "test": "preprocess - Z中心化后均值近似零",
+          "status": "PASS",
+          "detail": "max_mean=7.66e-17"
+        },
+        {
+          "test": "preprocess - y中心化后均值近似零",
+          "status": "PASS",
+          "detail": "mean_y=3.33e-18"
+        },
+        {
+          "test": "preprocess - 缺失数据ratio_matrix非None",
+          "status": "PASS",
+          "detail": "ratio_matrix shape=(10, 10)"
+        },
+        {
+          "test": "preprocess - 缺失数据Z无NaN",
+          "status": "PASS",
+          "detail": "has_nan=False"
+        }
+      ]
+    },
+    "test_cocolasso.py": {
+      "module": "CoCoLasso",
+      "total": 31,
+      "passed": 31,
+      "failed": 0,
+      "elapsed_sec": 88.45,
+      "all_passed": true,
+      "details": [
+        {
+          "test": "additive - fit成功",
+          "status": "PASS",
+          "detail": "coef_shape=(20,)"
+        },
+        {
+          "test": "additive - coef_维度",
+          "status": "PASS",
+          "detail": "shape=(20,)"
+        },
+        {
+          "test": "additive - intercept_存在",
+          "status": "PASS",
+          "detail": "intercept=0.0101"
+        },
+        {
+          "test": "additive - lambda_opt_ > 0",
+          "status": "PASS",
+          "detail": "lambda_opt=0.116174"
+        },
+        {
+          "test": "additive - cv_results_完整",
+          "status": "PASS",
+          "detail": "keys=['lambda', 'error', 'error_inf', 'error_sup', 'error_sd']"
+        },
+        {
+          "test": "additive - coef_path_完整",
+          "status": "PASS",
+          "detail": "path_len=16"
+        },
+        {
+          "test": "additive - 变量选择合理",
+          "status": "PASS",
+          "detail": "nonzero=4, expected>=3"
+        },
+        {
+          "test": "additive - predict维度",
+          "status": "PASS",
+          "detail": "shape=(50,)"
+        },
+        {
+          "test": "additive - score(R²)有限",
+          "status": "PASS",
+          "detail": "R²=0.4017"
+        },
+        {
+          "test": "missing - fit成功",
+          "status": "PASS",
+          "detail": "coef_shape=(15,)"
+        },
+        {
+          "test": "missing - coef_无NaN",
+          "status": "PASS",
+          "detail": "has_nan=False"
+        },
+        {
+          "test": "missing - lambda_opt_ > 0",
+          "status": "PASS",
+          "detail": "lambda_opt=0.053074"
+        },
+        {
+          "test": "missing - predict无NaN",
+          "status": "PASS",
+          "detail": "has_nan=False"
+        },
+        {
+          "test": "multiplicative - fit成功",
+          "status": "PASS",
+          "detail": "coef_shape=(15,)"
+        },
+        {
+          "test": "multiplicative - coef_无NaN/Inf",
+          "status": "PASS",
+          "detail": "has_nan=False, has_inf=False"
+        },
+        {
+          "test": "multiplicative - lambda_opt_ > 0",
+          "status": "PASS",
+          "detail": "lambda_opt=0.057455"
+        },
+        {
+          "test": "sklearn_solver - fit成功",
+          "status": "PASS",
+          "detail": "coef_shape=(20,)"
+        },
+        {
+          "test": "sklearn_solver - coef_无NaN/Inf",
+          "status": "PASS",
+          "detail": "finite=True"
+        },
+        {
+          "test": "sklearn_solver - lambda_opt_ > 0",
+          "status": "PASS",
+          "detail": "lambda_opt=0.073436"
+        },
+        {
+          "test": "sklearn_solver - predict维度",
+          "status": "PASS",
+          "detail": "shape=(50,)"
+        },
+        {
+          "test": "sklearn_api - 继承BaseEstimator",
+          "status": "PASS",
+          "detail": "type=(<class 'src.cocolasso.CoCoLasso'>, <class 'sklearn.base.BaseEstimator'>, <class 'sklearn.utils._repr_html.base.ReprHTMLMixin'>, <class 'sklearn.utils._repr_html.base._HTMLDocumentationLinkMixin'>, <class 'sklearn.utils._metadata_requests._MetadataRequester'>, <class 'sklearn.base.RegressorMixin'>, <class 'object'>)"
+        },
+        {
+          "test": "sklearn_api - 继承RegressorMixin",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "test": "sklearn_api - get_params可用",
+          "status": "PASS",
+          "detail": "tau=0.5"
+        },
+        {
+          "test": "sklearn_api - set_params可用",
+          "status": "PASS",
+          "detail": "max_iter=50"
+        },
+        {
+          "test": "ADMM_vs_HM - 两种模式均可运行",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "test": "ADMM_vs_HM - 系数差异合理",
+          "status": "PASS",
+          "detail": "max_diff=0.0000"
+        },
+        {
+          "test": "early_stopping - n_iter_ <= max_iter",
+          "status": "PASS",
+          "detail": "n_iter=29"
+        },
+        {
+          "test": "early_stopping - n_iter_ > 0",
+          "status": "PASS",
+          "detail": "n_iter=29"
+        },
+        {
+          "test": "coef_sd - 存在",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "test": "coef_sd - 维度",
+          "status": "PASS",
+          "detail": "shape=(20,)"
+        },
+        {
+          "test": "coef_sd - lambda_sd_ >= lambda_opt_",
+          "status": "PASS",
+          "detail": "lambda_sd=0.427182 >= lambda_opt=0.099778"
+        }
+      ]
+    }
+  }
+}

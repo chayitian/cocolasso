@@ -1,0 +1,321 @@
+nohup: ignoring input
+============================================================
+CoCoLasso 全部测试
+============================================================
+
+############################################################
+# 运行: test_utils.py
+############################################################
+============================================================
+_utils 模块单元测试
+============================================================
+[PASS] l1_proj - L1范数约束  (L1=2.000000 <= 2.0)
+[PASS] l1_proj - 零向量输入  (output=[0. 0. 0. 0. 0.])
+[PASS] l1_proj - 大向量投影  (L1=1.000000)
+[PASS] admm_proj - 输出PSD  (min_eigval=2.12e-01)
+[PASS] admm_proj - 对称性  (max_asym=1.11e-15)
+[PASS] admm_proj - 已PSD矩阵不变  (max_diff=0.00e+00)
+[PASS] admm_proj - 负定矩阵投影到PSD  (min_eigval=1.00e-06)
+[PASS] hm_proj - 输出PSD  (min_eigval=1.70e-01)
+[PASS] hm_proj - 对称性  (max_asym=8.88e-16)
+[PASS] hm_proj - 带R矩阵输出PSD  (min_eigval=1.70e-01)
+[PASS] scad_weight - |beta|<=lambda  (w=1.000000, expected=1.0)
+[PASS] scad_weight - lambda<|beta|<=a*lambda  (w=0.629630, expected=0.629630)
+[PASS] scad_weight - |beta|>a*lambda  (w=0.000000, expected=0.0)
+[PASS] lasso_covariance - 返回结构  (keys=['coefficients', 'num_it'])
+[PASS] lasso_covariance - 系数维度  (shape=(10,))
+[PASS] lasso_covariance - 大lambda全零  (max_coef=0.00e+00)
+[PASS] lasso_covariance - SCAD惩罚  (nnz=5)
+[PASS] lasso_sklearn - 返回结构  (keys=['coefficients', 'num_it'])
+[PASS] lasso_sklearn - 系数维度  (shape=(10,))
+[PASS] lasso_sklearn - 大lambda全零  (max_coef=0.00e+00)
+[PASS] lasso_sklearn - warm_start  (nnz=5)
+[PASS] solver_consistency - CD vs sklearn  (max_diff=1.35e-02, diffs=['1.35e-02', '3.18e-03', '8.62e-03', '0.00e+00'])
+[PASS] ratio_matrix - 形状  (shape=(5, 5))
+[PASS] ratio_matrix - 对称性  (max_asym=0.00e+00)
+[PASS] ratio_matrix - 对角线<=1  (max_diag=1.0000)
+[PASS] ratio_matrix - 非负  (min_val=0.9000)
+[PASS] ratio_matrix - 无缺失时全为1  (max_diff_from_1=0.00e+00)
+[PASS] log_space - 长度  (len=100)
+[PASS] log_space - 起止值  (start=1.000000, end=0.001000)
+[PASS] log_space - 单调递减  (first_diff=0.067397)
+[PASS] multiplicative_corr - Gamma形状  (shape=(5, 5))
+[PASS] multiplicative_corr - rho形状  (shape=(5,))
+[PASS] multiplicative_corr - Gamma对称  (max_asym=4.16e-17)
+[PASS] multiplicative_corr - 校正公式正确  (max_diff=0.00e+00)
+[PASS] preprocess - 加性噪声返回键  (keys=['Z', 'y', 'mean_Z', 'sd_Z', 'mean_y', 'sd_y', 'ratio_matrix'])
+[PASS] preprocess - Z中心化后均值近似零  (max_mean=7.66e-17)
+[PASS] preprocess - y中心化后均值近似零  (mean_y=3.33e-18)
+[PASS] preprocess - 缺失数据ratio_matrix非None  (ratio_matrix shape=(10, 10))
+[PASS] preprocess - 缺失数据Z无NaN  (has_nan=False)
+
+============================================================
+总计: 39, 通过: 39, 失败: 0, 耗时: 0.53s
+结果已保存: /root/git_projects/cocolasso/tests/results/test_utils_results.json
+============================================================
+
+
+############################################################
+# 运行: test_cocolasso.py
+############################################################
+============================================================
+CoCoLasso 集成测试
+============================================================
+
+--- 加性噪声 ---
+[PASS] additive - fit成功  (coef_shape=(20,))
+[PASS] additive - coef_维度  (shape=(20,))
+[PASS] additive - intercept_存在  (intercept=0.0101)
+[PASS] additive - lambda_opt_ > 0  (lambda_opt=0.116174)
+[PASS] additive - cv_results_完整  (keys=['lambda', 'error', 'error_inf', 'error_sup', 'error_sd'])
+[PASS] additive - coef_path_完整  (path_len=16)
+[PASS] additive - 变量选择合理  (nonzero=4, expected>=3)
+[PASS] additive - predict维度  (shape=(50,))
+[PASS] additive - score(R²)有限  (R²=0.4017)
+
+--- 缺失数据 ---
+[PASS] missing - fit成功  (coef_shape=(15,))
+[PASS] missing - coef_无NaN  (has_nan=False)
+[PASS] missing - lambda_opt_ > 0  (lambda_opt=0.053074)
+[PASS] missing - predict无NaN  (has_nan=False)
+
+--- 乘性噪声 ---
+[PASS] multiplicative - fit成功  (coef_shape=(15,))
+[PASS] multiplicative - coef_无NaN/Inf  (has_nan=False, has_inf=False)
+[PASS] multiplicative - lambda_opt_ > 0  (lambda_opt=0.057455)
+
+--- sklearn 求解器 ---
+[PASS] sklearn_solver - fit成功  (coef_shape=(20,))
+[PASS] sklearn_solver - coef_无NaN/Inf  (finite=True)
+[PASS] sklearn_solver - lambda_opt_ > 0  (lambda_opt=0.073436)
+[PASS] sklearn_solver - predict维度  (shape=(50,))
+
+--- sklearn API 兼容性 ---
+[PASS] sklearn_api - 继承BaseEstimator  (type=(<class 'src.cocolasso.CoCoLasso'>, <class 'sklearn.base.BaseEstimator'>, <class 'sklearn.utils._repr_html.base.ReprHTMLMixin'>, <class 'sklearn.utils._repr_html.base._HTMLDocumentationLinkMixin'>, <class 'sklearn.utils._metadata_requests._MetadataRequester'>, <class 'sklearn.base.RegressorMixin'>, <class 'object'>))
+[PASS] sklearn_api - 继承RegressorMixin
+[PASS] sklearn_api - get_params可用  (tau=0.5)
+[PASS] sklearn_api - set_params可用  (max_iter=50)
+
+--- ADMM vs HM 投影模式 ---
+[PASS] ADMM_vs_HM - 两种模式均可运行
+[PASS] ADMM_vs_HM - 系数差异合理  (max_diff=0.0000)
+
+--- 早停机制 ---
+[PASS] early_stopping - n_iter_ <= max_iter  (n_iter=29)
+[PASS] early_stopping - n_iter_ > 0  (n_iter=29)
+
+--- 1-std 准则 ---
+[PASS] coef_sd - 存在
+[PASS] coef_sd - 维度  (shape=(20,))
+[PASS] coef_sd - lambda_sd_ >= lambda_opt_  (lambda_sd=0.427182 >= lambda_opt=0.099778)
+
+============================================================
+总计: 31, 通过: 31, 失败: 0, 耗时: 88.45s
+结果已保存: /root/git_projects/cocolasso/tests/results/test_cocolasso_results.json
+============================================================
+
+
+############################################################
+# 运行: test_bdcocolasso.py
+############################################################
+============================================================
+BDCoCoLasso 集成测试
+============================================================
+
+--- BD 加性噪声 ---
+[PASS] BD_additive - fit成功  (coef_shape=(20,))
+[PASS] BD_additive - coef_维度  (shape=(20,))
+[PASS] BD_additive - intercept_存在  (intercept=-0.1288)
+[PASS] BD_additive - lambda_opt_ > 0  (lambda_opt=0.042020)
+[PASS] BD_additive - coef_无NaN/Inf  (finite=True)
+[PASS] BD_additive - predict维度  (shape=(50,))
+[PASS] BD_additive - score(R²)有限  (R²=0.4081)
+
+--- BD 缺失数据 ---
+
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:287: RuntimeWarning: overflow encountered in scalar divide
+[STDERR]   beta[j] = (lambda_val - S0) / XX[j, j]
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:291: RuntimeWarning: invalid value encountered in add
+[STDERR]   s += XX[:, j] * (beta[j] - beta_old[j])
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:290: RuntimeWarning: overflow encountered in scalar divide
+[STDERR]   beta[j] = (-lambda_val - S0) / XX[j, j]
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:288: RuntimeWarning: invalid value encountered in add
+[STDERR]   s += XX[:, j] * (beta[j] - beta_old[j])
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:115: RuntimeWarning: overflow encountered in matmul
+[STDERR]   Xy1 = (1 / n) * X1.T @ (y - Z2 @ beta2)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:115: RuntimeWarning: invalid value encountered in matmul
+[STDERR]   Xy1 = (1 / n) * X1.T @ (y - Z2 @ beta2)
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:274: RuntimeWarning: invalid value encountered in scalar subtract
+[STDERR]   S0 = s[j] - XX[j, j] * beta_old[j] - Xy[j]
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:407: RuntimeWarning: overflow encountered in matmul
+[STDERR]   beta2_lambda @ sigma_corrupted_test @ beta2_lambda -
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:406: RuntimeWarning: overflow encountered in matmul
+[STDERR]   err = (beta1_lambda @ sigma_uncorrupted_test @ beta1_lambda +
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:409: RuntimeWarning: overflow encountered in matmul
+[STDERR]   2 * beta2_lambda @ sigma3)
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/lib/_function_base_impl.py:4653: RuntimeWarning: invalid value encountered in subtract
+[STDERR]   diff_b_a = subtract(b, a)
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/_core/_methods.py:191: RuntimeWarning: invalid value encountered in subtract
+[STDERR]   x = asanyarray(arr - arrmean)
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:274: RuntimeWarning: overflow encountered in scalar subtract
+[STDERR]   S0 = s[j] - XX[j, j] * beta_old[j] - Xy[j]
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:438: RuntimeWarning: invalid value encountered in scalar subtract
+[STDERR]   if abs(error - error_old) < optTol:
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:86: RuntimeWarning: overflow encountered in reduce
+[STDERR]   return ufunc.reduce(obj, axis, dtype, out, **passkwargs)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:409: RuntimeWarning: overflow encountered in multiply
+[STDERR]   2 * beta2_lambda @ sigma3)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:409: RuntimeWarning: invalid value encountered in matmul
+[STDERR]   2 * beta2_lambda @ sigma3)
+[STDERR] Traceback (most recent call last):
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_bdcocolasso.py", line 280, in <module>
+[STDERR]     ok = main()
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_bdcocolasso.py", line 246, in main
+[STDERR]     test_missing_data()
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_bdcocolasso.py", line 110, in test_missing_data
+[STDERR]     model.fit(Z, y)
+[STDERR]   File "/root/git_projects/cocolasso/src/bdcocolasso.py", line 629, in fit
+[STDERR]     result = _blockwise_coordinate_descent(
+[STDERR]   File "/root/git_projects/cocolasso/src/bdcocolasso.py", line 327, in _blockwise_coordinate_descent
+[STDERR]     preprocessed = _preprocess_data(
+[STDERR]   File "/root/git_projects/cocolasso/src/_utils.py", line 467, in _preprocess_data
+[STDERR]     Z[np.isnan(Z[:, p1:])] = 0
+[STDERR] IndexError: boolean index did not match indexed array along axis 1; size of axis is 15 but size of corresponding boolean axis is 10
+
+############################################################
+# 运行: test_generalcocolasso.py
+############################################################
+============================================================
+GeneralCoCoLasso 集成测试
+============================================================
+
+--- 三块混合噪声 ---
+
+[STDERR] Traceback (most recent call last):
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_generalcocolasso.py", line 273, in <module>
+[STDERR]     ok = main()
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_generalcocolasso.py", line 239, in main
+[STDERR]     test_three_blocks()
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_generalcocolasso.py", line 66, in test_three_blocks
+[STDERR]     model.fit(Z, y)
+[STDERR]   File "/root/git_projects/cocolasso/src/generalcocolasso.py", line 723, in fit
+[STDERR]     result = _blockwise_coordinate_descent_general(
+[STDERR]   File "/root/git_projects/cocolasso/src/generalcocolasso.py", line 367, in _blockwise_coordinate_descent_general
+[STDERR]     preprocessed = _preprocess_data(
+[STDERR]   File "/root/git_projects/cocolasso/src/_utils.py", line 467, in _preprocess_data
+[STDERR]     Z[np.isnan(Z[:, p1:])] = 0
+[STDERR] IndexError: boolean index did not match indexed array along axis 1; size of axis is 20 but size of corresponding boolean axis is 7
+
+############################################################
+# 运行: test_solver_consistency.py
+############################################################
+============================================================
+求解器一致性测试
+============================================================
+
+--- 底层求解器直接对比 ---
+[PASS] direct_lambda=0.01  (max_diff=1.52e-06)
+[PASS] direct_lambda=0.05  (max_diff=3.11e-02)
+[PASS] direct_lambda=0.10  (max_diff=1.22e-02)
+[PASS] direct_lambda=0.50  (max_diff=0.00e+00)
+[PASS] direct_lambda=1.00  (max_diff=0.00e+00)
+
+--- 底层求解器 warm_start 对比 ---
+[PASS] warm_start_consistency  (max_diff=0.00e+00)
+
+--- CoCoLasso 加性噪声 CD vs sklearn ---
+[PASS] coco_additive_coef  (max_diff=0.000000)
+[PASS] coco_additive_lambda  (ratio=1.0000)
+
+--- CoCoLasso 乘性噪声 CD vs sklearn ---
+[PASS] coco_multiplicative_coef  (max_diff=0.000858)
+
+--- CoCoLasso 缺失数据 CD vs sklearn ---
+[PASS] coco_missing_coef  (max_diff=0.023045)
+
+--- BDCoCoLasso 加性噪声 CD vs sklearn ---
+
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:287: RuntimeWarning: overflow encountered in scalar divide
+[STDERR]   beta[j] = (lambda_val - S0) / XX[j, j]
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:291: RuntimeWarning: invalid value encountered in add
+[STDERR]   s += XX[:, j] * (beta[j] - beta_old[j])
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:288: RuntimeWarning: invalid value encountered in add
+[STDERR]   s += XX[:, j] * (beta[j] - beta_old[j])
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:86: RuntimeWarning: overflow encountered in reduce
+[STDERR]   return ufunc.reduce(obj, axis, dtype, out, **passkwargs)
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:290: RuntimeWarning: overflow encountered in scalar divide
+[STDERR]   beta[j] = (-lambda_val - S0) / XX[j, j]
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:115: RuntimeWarning: overflow encountered in matmul
+[STDERR]   Xy1 = (1 / n) * X1.T @ (y - Z2 @ beta2)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:115: RuntimeWarning: invalid value encountered in matmul
+[STDERR]   Xy1 = (1 / n) * X1.T @ (y - Z2 @ beta2)
+[STDERR] /root/git_projects/cocolasso/src/_utils.py:274: RuntimeWarning: invalid value encountered in scalar subtract
+[STDERR]   S0 = s[j] - XX[j, j] * beta_old[j] - Xy[j]
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:407: RuntimeWarning: overflow encountered in matmul
+[STDERR]   beta2_lambda @ sigma_corrupted_test @ beta2_lambda -
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/lib/_function_base_impl.py:4653: RuntimeWarning: invalid value encountered in subtract
+[STDERR]   diff_b_a = subtract(b, a)
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/lib/_function_base_impl.py:4655: RuntimeWarning: invalid value encountered in add
+[STDERR]   lerp_interpolation = asanyarray(add(a, diff_b_a * t, out=out))
+[STDERR] /usr/local/lib/python3.10/dist-packages/numpy/_core/_methods.py:191: RuntimeWarning: invalid value encountered in subtract
+[STDERR]   x = asanyarray(arr - arrmean)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:409: RuntimeWarning: overflow encountered in multiply
+[STDERR]   2 * beta2_lambda @ sigma3)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:409: RuntimeWarning: invalid value encountered in matmul
+[STDERR]   2 * beta2_lambda @ sigma3)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:406: RuntimeWarning: overflow encountered in matmul
+[STDERR]   err = (beta1_lambda @ sigma_uncorrupted_test @ beta1_lambda +
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:409: RuntimeWarning: overflow encountered in matmul
+[STDERR]   2 * beta2_lambda @ sigma3)
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:406: RuntimeWarning: invalid value encountered in scalar add
+[STDERR]   err = (beta1_lambda @ sigma_uncorrupted_test @ beta1_lambda +
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:407: RuntimeWarning: invalid value encountered in matmul
+[STDERR]   beta2_lambda @ sigma_corrupted_test @ beta2_lambda -
+[STDERR] /root/git_projects/cocolasso/src/bdcocolasso.py:408: RuntimeWarning: overflow encountered in matmul
+[STDERR]   2 * rho_1 @ beta1_lambda - 2 * rho_2 @ beta2_lambda +
+[STDERR] Traceback (most recent call last):
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_solver_consistency.py", line 331, in <module>
+[STDERR]     ok = main()
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_solver_consistency.py", line 298, in main
+[STDERR]     test_bdcocolasso_additive()
+[STDERR]   File "/root/git_projects/cocolasso/tests/test_solver_consistency.py", line 188, in test_bdcocolasso_additive
+[STDERR]     model_sk.fit(Z, y)
+[STDERR]   File "/root/git_projects/cocolasso/src/bdcocolasso.py", line 629, in fit
+[STDERR]     result = _blockwise_coordinate_descent(
+[STDERR]   File "/root/git_projects/cocolasso/src/bdcocolasso.py", line 381, in _blockwise_coordinate_descent
+[STDERR]     out = _lasso_covariance_block(
+[STDERR]   File "/root/git_projects/cocolasso/src/bdcocolasso.py", line 138, in _lasso_covariance_block
+[STDERR]     beta2 = _lasso_sklearn(
+[STDERR]   File "/root/git_projects/cocolasso/src/_utils.py", line 355, in _lasso_sklearn
+[STDERR]     lasso.fit(W_tilde, Y_tilde)
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/base.py", line 1365, in wrapper
+[STDERR]     return fit_method(estimator, *args, **kwargs)
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/linear_model/_coordinate_descent.py", line 986, in fit
+[STDERR]     X, y = validate_data(
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/utils/validation.py", line 2971, in validate_data
+[STDERR]     X, y = check_X_y(X, y, **check_params)
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/utils/validation.py", line 1385, in check_X_y
+[STDERR]     y = _check_y(y, multi_output=multi_output, y_numeric=y_numeric, estimator=estimator)
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/utils/validation.py", line 1395, in _check_y
+[STDERR]     y = check_array(
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/utils/validation.py", line 1105, in check_array
+[STDERR]     _assert_all_finite(
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/utils/validation.py", line 120, in _assert_all_finite
+[STDERR]     _assert_all_finite_element_wise(
+[STDERR]   File "/usr/local/lib/python3.10/dist-packages/sklearn/utils/validation.py", line 169, in _assert_all_finite_element_wise
+[STDERR]     raise ValueError(msg_err)
+[STDERR] ValueError: Input y contains NaN.
+
+============================================================
+全部测试汇总
+============================================================
+  [PASS] test_utils.py  (5.83s)
+  [PASS] test_cocolasso.py  (92.79s)
+  [FAIL] test_bdcocolasso.py  (2969.86s)
+  [FAIL] test_generalcocolasso.py  (1.51s)
+  [FAIL] test_solver_consistency.py  (2351.62s)
+
+断言总数: 70, 通过: 70, 失败: 0
+总耗时: 5421.61s
+结果已保存: /root/git_projects/cocolasso/tests/results/all_results.json
+============================================================

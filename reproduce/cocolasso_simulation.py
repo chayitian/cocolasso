@@ -18,7 +18,7 @@ import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
 
-# 将 src 目录加入到系统路径中，以便能够正确导入 cocolasso
+# 将项目根目录加入到系统路径中，以便能够正确导入 src
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src import coco
 
@@ -146,7 +146,7 @@ def run_single_experiment(error_type: str,
 
     result = coco(
         Z=Z, y=y, n=n, p=p,
-        step=100, K=K_FOLDS, mu=10, tau=tau,
+        step=100, K=K_FOLDS, mu=1.0, tau=tau,
         etol=1e-4, noise=error_type, block=False,
         penalty="lasso", mode="ADMM"
     )
