@@ -319,13 +319,17 @@ def _pathwise_coordinate_descent(
         "error_sd": error_list[:earlyStopping, 3],
     }
 
-    step_min = int(np.argmin(df_error["error"]))
+    errors_clean = np.where(np.isfinite(df_error["error"]), df_error["error"], 1e10)
+    step_min = int(np.argmin(errors_clean))
     sd_best = df_error["error_sd"][step_min]
+    if not np.isfinite(sd_best):
+        sd_best = 0.0
+    threshold = errors_clean[step_min] + sd_best
     candidates = np.where(
-        (df_error["error"] > best_error + sd_best) &
-        (df_error["lambda"] > df_error["lambda"][step_min])
+        (errors_clean <= threshold) &
+        (df_error["lambda"] >= df_error["lambda"][step_min])
     )[0]
-    step_sd = int(np.max(candidates)) if len(candidates) > 0 else step_min
+    step_sd = int(np.min(candidates)) if len(candidates) > 0 else step_min
     lambda_sd = df_error["lambda"][step_sd]
     beta_sd = matrix_beta[step_sd, :]
 
@@ -522,21 +526,9 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
         return self
 
     def predict(self, Z):
-        """
-        使用拟合模型进行预测。
-
-        参数
-        ----------
-        Z : ndarray, shape (n_samples, p)
-            设计矩阵。
-
-        返回
-        -------
-        y_pred : ndarray, shape (n_samples,)
-            预测值。
-        """
         Z = np.asarray(Z, dtype=float)
-        return Z @ self.coef_ + self.intercept_
+        Z_clean = np.where(np.isnan(Z), 0.0, Z)
+        return Z_clean @ self.coef_ + self.intercept_
 
     def score(self, Z, y):
         """

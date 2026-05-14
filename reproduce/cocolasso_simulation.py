@@ -148,7 +148,7 @@ def run_single_experiment(error_type: str,
         Z=Z, y=y, n=n, p=p,
         step=100, K=K_FOLDS, mu=1.0, tau=tau,
         etol=1e-4, noise=error_type, block=False,
-        penalty="lasso", mode="ADMM"
+        penalty="lasso", mode="ADMM", solver="sklearn"
     )
     beta_proc = result["beta_opt"]
     beta_hat = unscale_coefficients(

@@ -267,14 +267,16 @@ def _lasso_covariance(
     s = XX @ beta
     lambda0 = lambda_val
     m = 1
+    diag_eps = 1e-10
 
     while m < max_iter:
         beta_old = beta.copy()
         for j in range(p):
             S0 = s[j] - XX[j, j] * beta_old[j] - Xy[j]
 
-            if np.any(np.isnan(S0)):
+            if not np.isfinite(S0):
                 beta[j] = 0
+                s = XX @ beta
                 continue
 
             w_j = 1.0
@@ -282,15 +284,25 @@ def _lasso_covariance(
                 w_j = _scad_weight(beta[j], lambda0)
 
             lambda_val = w_j * lambda0
+            diag_j = XX[j, j] if XX[j, j] > diag_eps else diag_eps
 
             if S0 > lambda_val:
-                beta[j] = (lambda_val - S0) / XX[j, j]
-                s += XX[:, j] * (beta[j] - beta_old[j])
+                beta[j] = (lambda_val - S0) / diag_j
             elif S0 < -lambda_val:
-                beta[j] = (-lambda_val - S0) / XX[j, j]
-                s += XX[:, j] * (beta[j] - beta_old[j])
+                beta[j] = (-lambda_val - S0) / diag_j
             else:
                 beta[j] = 0
+
+            if not np.isfinite(beta[j]):
+                beta[j] = 0
+                s = XX @ beta
+                continue
+
+            s += XX[:, j] * (beta[j] - beta_old[j])
+
+        if not np.all(np.isfinite(beta)):
+            beta = np.zeros(p)
+            break
 
         if np.sum(np.abs(beta - beta_old)) < opt_tol:
             break
@@ -337,11 +349,20 @@ def _lasso_sklearn(
     from scipy.linalg import cholesky
     from sklearn.linear_model import Lasso
 
-    U = cholesky(XX, lower=False)
+    if not (np.all(np.isfinite(XX)) and np.all(np.isfinite(Xy))):
+        return {"coefficients": np.zeros(p), "num_it": 0}
+
+    try:
+        U = cholesky(XX, lower=False)
+    except np.linalg.LinAlgError:
+        return {"coefficients": np.zeros(p), "num_it": 0}
 
     W_tilde = np.sqrt(p) * U
 
     Y_tilde = np.linalg.solve(U.T, np.sqrt(p) * Xy.ravel())
+
+    if not (np.all(np.isfinite(W_tilde)) and np.all(np.isfinite(Y_tilde))):
+        return {"coefficients": np.zeros(p), "num_it": 0}
 
     alpha = lambda_val
 
@@ -354,7 +375,11 @@ def _lasso_sklearn(
 
     lasso.fit(W_tilde, Y_tilde)
 
-    return {"coefficients": lasso.coef_, "num_it": int(lasso.n_iter_)}
+    coef = lasso.coef_
+    if not np.all(np.isfinite(coef)):
+        coef = np.zeros(p)
+
+    return {"coefficients": coef, "num_it": int(lasso.n_iter_)}
 
 
 def _compute_ratio_matrix(Z: np.ndarray, p: Optional[int] = None, offset: int = 0) -> np.ndarray:
@@ -464,7 +489,7 @@ def _preprocess_data(
                 for j in range(p1, p):
                     col_mask = ~np.isnan(Z[:, j])
                     Z[col_mask, j] -= mean_Z[j]
-                Z[np.isnan(Z[:, p1:])] = 0
+                Z[:, p1:][np.isnan(Z[:, p1:])] = 0
                 if p1 > 0:
                     Z[:, :p1] = Z[:, :p1] - mean_Z[:p1]
             else:

@@ -53,6 +53,7 @@ def _lasso_covariance_block(
     beta2_start: Optional[np.ndarray] = None,
     penalty: str = "lasso",
     max_iter: int = 1000,
+    inner_max_iter: int = 200,
     opt_tol: float = 1e-5,
     zero_threshold: float = 1e-6,
     solver: str = "coordinate_descent",
@@ -125,7 +126,7 @@ def _lasso_covariance_block(
         else:
             beta1 = _lasso_covariance(
                 n=n, p=p1, lambda_val=lambda_val, XX=sigma1, Xy=Xy1,
-                beta_start=beta1_old, penalty=penalty, max_iter=max_iter,
+                beta_start=beta1_old, penalty=penalty, max_iter=inner_max_iter,
                 opt_tol=opt_tol, zero_threshold=zero_threshold,
             )["coefficients"]
 
@@ -142,7 +143,7 @@ def _lasso_covariance_block(
         else:
             beta2 = _lasso_covariance(
                 n=n, p=p2, lambda_val=lambda_val, XX=sigma2, Xy=Xy2,
-                beta_start=beta2_old, penalty=penalty, max_iter=max_iter,
+                beta_start=beta2_old, penalty=penalty, max_iter=inner_max_iter,
                 opt_tol=opt_tol, zero_threshold=zero_threshold,
             )["coefficients"]
 
@@ -407,13 +408,17 @@ def _blockwise_coordinate_descent(
                    beta2_lambda @ sigma_corrupted_test @ beta2_lambda -
                    2 * rho_1 @ beta1_lambda - 2 * rho_2 @ beta2_lambda +
                    2 * beta2_lambda @ sigma3)
+            if not np.isfinite(err):
+                err = 1e10
             cv_errors.append(err)
 
-        error = np.mean(cv_errors)
+        cv_errors_arr = np.array(cv_errors)
+        cv_errors_arr = np.where(np.isfinite(cv_errors_arr), cv_errors_arr, 1e10)
+        error = np.mean(cv_errors_arr)
         error_list[i, 0] = error
-        error_list[i, 1] = np.quantile(cv_errors, 0.1)
-        error_list[i, 2] = np.quantile(cv_errors, 0.9)
-        error_list[i, 3] = np.std(cv_errors)
+        error_list[i, 1] = np.quantile(cv_errors_arr, 0.1)
+        error_list[i, 2] = np.quantile(cv_errors_arr, 0.9)
+        error_list[i, 3] = np.std(cv_errors_arr)
 
         out = _lasso_covariance_block(
             n=n, p1=p1, p2=p2, X1=X1, Z2=Z2, y=y_proc,
@@ -453,13 +458,17 @@ def _blockwise_coordinate_descent(
         "error_sd": error_list[:earlyStopping, 3],
     }
 
-    step_min = int(np.argmin(df_error["error"]))
+    errors_clean = np.where(np.isfinite(df_error["error"]), df_error["error"], 1e10)
+    step_min = int(np.argmin(errors_clean))
     sd_best = df_error["error_sd"][step_min]
+    if not np.isfinite(sd_best):
+        sd_best = 0.0
+    threshold = errors_clean[step_min] + sd_best
     candidates = np.where(
-        (df_error["error"] > best_error + sd_best) &
-        (df_error["lambda"] > df_error["lambda"][step_min])
+        (errors_clean <= threshold) &
+        (df_error["lambda"] >= df_error["lambda"][step_min])
     )[0]
-    step_sd = int(np.max(candidates)) if len(candidates) > 0 else step_min
+    step_sd = int(np.min(candidates)) if len(candidates) > 0 else step_min
     lambda_sd = df_error["lambda"][step_sd]
     beta_sd = matrix_beta[step_sd, :]
 
@@ -666,21 +675,9 @@ class BDCoCoLasso(BaseEstimator, RegressorMixin):
         return self
 
     def predict(self, Z):
-        """
-        使用拟合模型进行预测。
-
-        参数
-        ----------
-        Z : ndarray, shape (n_samples, p)
-            设计矩阵。
-
-        返回
-        -------
-        y_pred : ndarray, shape (n_samples,)
-            预测值。
-        """
         Z = np.asarray(Z, dtype=float)
-        return Z @ self.coef_ + self.intercept_
+        Z_clean = np.where(np.isnan(Z), 0.0, Z)
+        return Z_clean @ self.coef_ + self.intercept_
 
     def score(self, Z, y):
         """
