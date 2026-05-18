@@ -9,6 +9,159 @@ import numpy as np
 from typing import Optional, Dict
 
 
+def _make_cv_folds(n: int, K: int) -> list:
+    """Create K non-empty random folds, keeping all samples when n is not divisible by K."""
+    if K < 2:
+        raise ValueError("K must be at least 2")
+    if K > n:
+        raise ValueError("K cannot exceed the number of samples")
+    return [fold for fold in np.array_split(np.random.permutation(n), K) if len(fold) > 0]
+
+
+def _validate_common_options(
+    noise: Optional[str] = None,
+    allowed_noises: Optional[set] = None,
+    penalty: str = "lasso",
+    mode: str = "ADMM",
+    solver: str = "coordinate_descent",
+    tau: Optional[float] = None,
+    tau_required: bool = False,
+) -> None:
+    """Validate shared estimator/function options before numerical work starts."""
+    if noise is not None and allowed_noises is not None and noise not in allowed_noises:
+        raise ValueError(f"noise must be one of {sorted(allowed_noises)}, got {noise!r}")
+    if penalty not in {"lasso", "SCAD"}:
+        raise ValueError("penalty must be 'lasso' or 'SCAD'")
+    if mode not in {"ADMM", "HM"}:
+        raise ValueError("mode must be 'ADMM' or 'HM'")
+    if solver not in {"coordinate_descent", "sklearn"}:
+        raise ValueError("solver must be 'coordinate_descent' or 'sklearn'")
+    if solver == "sklearn" and penalty != "lasso":
+        raise ValueError('solver="sklearn" only supports penalty="lasso"')
+    if tau_required and tau is None:
+        raise ValueError("tau must be provided for additive or multiplicative error")
+    if tau is not None and tau < 0:
+        raise ValueError("tau must be non-negative")
+
+
+def _additive_noise_variance(tau: float, sd_Z: np.ndarray, scale_Z: bool) -> np.ndarray:
+    """Return diagonal additive-error variance on the current preprocessed Z scale."""
+    if tau is None:
+        raise ValueError("tau must be provided for additive error")
+    sd_Z = np.asarray(sd_Z, dtype=float)
+    if scale_Z:
+        sd_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
+        return (tau / sd_safe) ** 2
+    return np.full(sd_Z.shape, tau ** 2, dtype=float)
+
+
+def _restore_coefficients(beta: np.ndarray, sd_Z: np.ndarray, sd_y: float) -> np.ndarray:
+    """Convert coefficients from preprocessed scale back to original feature scale."""
+    sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
+    return beta * sd_y / sd_Z_safe
+
+
+def _restore_coefficient_path(data_beta: Dict, sd_Z: np.ndarray, sd_y: float) -> Dict:
+    """Convert a coefficient path from preprocessed scale to original feature scale."""
+    beta_path = data_beta["beta"]
+    sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
+    return {
+        "lambda": data_beta["lambda"].copy(),
+        "beta": beta_path * sd_y / sd_Z_safe[np.newaxis, :],
+    }
+
+
+def _restore_intercept(
+    mean_Z: np.ndarray,
+    mean_y: float,
+    coef: np.ndarray,
+    center_Z: bool,
+    center_y: bool,
+) -> float:
+    """Restore the intercept implied by the preprocessing actually used for fitting."""
+    y_offset = mean_y if center_y else 0.0
+    z_offset = mean_Z if center_Z else np.zeros_like(mean_Z)
+    return float(y_offset - np.dot(z_offset, coef))
+
+
+def _apply_preprocess_data(
+    Z: np.ndarray,
+    y: np.ndarray,
+    mean_Z: np.ndarray,
+    sd_Z: np.ndarray,
+    mean_y: float,
+    sd_y: float,
+    center_Z: bool = True,
+    scale_Z: bool = True,
+    center_y: bool = True,
+    scale_y: bool = True,
+    noise: str = "additive",
+    p1: int = 0,
+    p2: int = 0,
+) -> Dict:
+    """Apply previously fitted preprocessing parameters to a new split."""
+    Z = Z.copy().astype(float)
+    y = y.copy().astype(float).ravel()
+    observed_mask = None
+
+    if noise == "missing":
+        if p2 > 0:
+            observed_mask = ~np.isnan(Z[:, p1:p1 + p2])
+        else:
+            observed_mask = ~np.isnan(Z[:, :Z.shape[1]])
+
+    if center_Z:
+        if noise == "missing":
+            if p2 > 0:
+                for j in range(p1, Z.shape[1]):
+                    col_mask = ~np.isnan(Z[:, j])
+                    Z[col_mask, j] -= mean_Z[j]
+                missing_block = Z[:, p1:]
+                missing_block[np.isnan(missing_block)] = 0
+                if p1 > 0:
+                    Z[:, :p1] = Z[:, :p1] - mean_Z[:p1]
+            else:
+                for j in range(Z.shape[1]):
+                    col_mask = ~np.isnan(Z[:, j])
+                    Z[col_mask, j] -= mean_Z[j]
+                Z[np.isnan(Z)] = 0
+        else:
+            Z = Z - mean_Z[np.newaxis, :]
+    elif noise == "missing":
+        if p2 > 0:
+            missing_block = Z[:, p1:]
+            missing_block[np.isnan(missing_block)] = 0
+        else:
+            Z[np.isnan(Z)] = 0
+
+    if scale_Z:
+        sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
+        Z = Z / sd_Z_safe[np.newaxis, :]
+
+    if center_y:
+        y = y - mean_y
+    if scale_y and sd_y != 0:
+        y = y / sd_y
+
+    return {"Z": Z, "y": y, "observed_mask": observed_mask}
+
+
+def _ratio_matrix_from_mask(mask: np.ndarray) -> np.ndarray:
+    """Compute pairwise observed ratios from a boolean observed-value mask."""
+    mask_float = mask.astype(float)
+    return (mask_float.T @ mask_float) / mask.shape[0]
+
+
+def _validate_ratio_matrix(ratio_matrix: np.ndarray, context: str = "ratio_matrix") -> None:
+    """Fail fast when missing-data ratios would cause division by zero or NaN."""
+    if ratio_matrix is None:
+        raise ValueError(f"{context} is required for missing data")
+    if not np.all(np.isfinite(ratio_matrix)):
+        raise ValueError(f"{context} contains NaN or Inf")
+    if np.any(ratio_matrix <= 0):
+        raise ValueError(f"{context} contains zero observed pairs; cannot correct missing data")
+
+
 def _l1_proj(v: np.ndarray, b: float) -> np.ndarray:
     """
     高效投影到半径为 b 的 L1 球上。
@@ -349,17 +502,29 @@ def _lasso_sklearn(
     from scipy.linalg import cholesky
     from sklearn.linear_model import Lasso
 
+    if p == 0:
+        return {"coefficients": np.zeros(0), "num_it": 0}
+
     if not (np.all(np.isfinite(XX)) and np.all(np.isfinite(Xy))):
         return {"coefficients": np.zeros(p), "num_it": 0}
 
-    try:
-        U = cholesky(XX, lower=False)
-    except np.linalg.LinAlgError:
+    XX = (XX + XX.T) / 2
+    U = None
+    for jitter in (0.0, 1e-10, 1e-8, 1e-6, 1e-4):
+        try:
+            U = cholesky(XX + jitter * np.eye(p), lower=False)
+            break
+        except np.linalg.LinAlgError:
+            continue
+    if U is None:
         return {"coefficients": np.zeros(p), "num_it": 0}
 
     W_tilde = np.sqrt(p) * U
 
-    Y_tilde = np.linalg.solve(U.T, np.sqrt(p) * Xy.ravel())
+    try:
+        Y_tilde = np.linalg.solve(U.T, np.sqrt(p) * Xy.ravel())
+    except np.linalg.LinAlgError:
+        return {"coefficients": np.zeros(p), "num_it": 0}
 
     if not (np.all(np.isfinite(W_tilde)) and np.all(np.isfinite(Y_tilde))):
         return {"coefficients": np.zeros(p), "num_it": 0}
@@ -476,12 +641,16 @@ def _preprocess_data(
     sd_Z = np.nanstd(Z, axis=0, ddof=1)
 
     ratio_matrix = None
+    observed_mask = None
 
     if noise == "missing":
         if p2 > 0:
+            observed_mask = ~np.isnan(Z[:, p1:p1 + p2])
             ratio_matrix = _compute_ratio_matrix(Z, p2, offset=p1)
         else:
+            observed_mask = ~np.isnan(Z[:, :p])
             ratio_matrix = _compute_ratio_matrix(Z, p)
+        _validate_ratio_matrix(ratio_matrix)
 
     if center_Z:
         if noise == "missing":
@@ -489,7 +658,8 @@ def _preprocess_data(
                 for j in range(p1, p):
                     col_mask = ~np.isnan(Z[:, j])
                     Z[col_mask, j] -= mean_Z[j]
-                Z[:, p1:][np.isnan(Z[:, p1:])] = 0
+                missing_block = Z[:, p1:]
+                missing_block[np.isnan(missing_block)] = 0
                 if p1 > 0:
                     Z[:, :p1] = Z[:, :p1] - mean_Z[:p1]
             else:
@@ -501,11 +671,17 @@ def _preprocess_data(
             Z = Z - mean_Z[np.newaxis, :]
 
         if scale_Z:
-            sd_Z_safe = np.where(sd_Z != 0, sd_Z, 1.0)
+            sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
             Z = Z / sd_Z_safe[np.newaxis, :]
     else:
+        if noise == "missing":
+            if p2 > 0:
+                missing_block = Z[:, p1:]
+                missing_block[np.isnan(missing_block)] = 0
+            else:
+                Z[np.isnan(Z)] = 0
         if scale_Z:
-            sd_Z_safe = np.where(sd_Z != 0, sd_Z, 1.0)
+            sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
             Z = Z / sd_Z_safe[np.newaxis, :]
 
     mean_y = np.mean(y)
@@ -525,4 +701,5 @@ def _preprocess_data(
         "mean_y": mean_y,
         "sd_y": sd_y,
         "ratio_matrix": ratio_matrix,
+        "observed_mask": observed_mask,
     }

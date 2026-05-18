@@ -12,12 +12,21 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from typing import Optional, Dict
 
 from ._utils import (
+    _additive_noise_variance,
     _admm_proj,
+    _apply_preprocess_data,
     _hm_proj,
     _lasso_covariance,
     _lasso_sklearn,
     _log_space,
+    _make_cv_folds,
     _preprocess_data,
+    _ratio_matrix_from_mask,
+    _restore_coefficient_path,
+    _restore_coefficients,
+    _restore_intercept,
+    _validate_common_options,
+    _validate_ratio_matrix,
 )
 
 
@@ -30,11 +39,16 @@ def _lambda_max_block(Z: np.ndarray, y: np.ndarray, n: int, p1: int, p2: int,
     Z2 = Z[:, p1:]
     if noise == "additive":
         rho_tilde = (1 / n) * Z.T @ y
-        return float(np.max(np.abs(rho_tilde)))
+        return float(np.max(np.abs(rho_tilde))) if rho_tilde.size > 0 else 0.0
     else:
-        rho_tilde1 = (1 / n) * X1.T @ y
-        rho_tilde2 = (1 / n) * Z2.T @ y / np.diag(ratio_matrix)
-        return float(max(np.max(np.abs(rho_tilde1)), np.max(np.abs(rho_tilde2))))
+        values = []
+        if p1 > 0:
+            rho_tilde1 = (1 / n) * X1.T @ y
+            values.append(np.max(np.abs(rho_tilde1)))
+        if p2 > 0:
+            rho_tilde2 = (1 / n) * Z2.T @ y / np.diag(ratio_matrix)
+            values.append(np.max(np.abs(rho_tilde2)))
+        return float(max(values)) if values else 0.0
 
 
 def _lasso_covariance_block(
@@ -159,14 +173,18 @@ def _lasso_covariance_block(
 
 def _cv_covariance_matrices_block(
     K: int,
-    mat: np.ndarray,
+    Z: np.ndarray,
     y: np.ndarray,
     p: int,
     p1: int,
     p2: int,
+    center_Z: bool = True,
+    scale_Z: bool = True,
+    center_y: bool = True,
+    scale_y: bool = True,
     mu: float = 1.0,
     tau: Optional[float] = None,
-    ratio_matrix: Optional[np.ndarray] = None,
+    global_preprocessed: Optional[Dict] = None,
     etol: float = 1e-4,
     noise: str = "additive",
     mode: str = "ADMM",
@@ -177,7 +195,7 @@ def _cv_covariance_matrices_block(
     参数
     ----------
     K : int, 交叉验证折数
-    mat : (n, p) ndarray, 设计矩阵（前 p1 列无误差，后 p2 列含误差）
+    Z : (n, p) ndarray, 原始设计矩阵（前 p1 列无误差，后 p2 列含误差）
     y : (n,) ndarray, 响应向量
     p : int, 总特征数
     p1 : int, 无误差特征数
@@ -197,12 +215,24 @@ def _cv_covariance_matrices_block(
         'list_sigma_lasso', 'list_sigma_error',
         'folds'
     """
-    n = mat.shape[0]
-    n_without_fold = n - n // K
-    n_one_fold = n // K
+    n = Z.shape[0]
     start = p1
 
-    folds = np.random.permutation(np.repeat(np.arange(1, K + 1), n // K))
+    fold_indices = _make_cv_folds(n, K)
+
+    if global_preprocessed is None:
+        global_preprocessed = _preprocess_data(
+            Z, y, n, p, center_Z, scale_Z, center_y, scale_y, noise, p1, p2,
+        )
+
+    mat = global_preprocessed["Z"]
+    ratio_matrix = global_preprocessed["ratio_matrix"]
+    observed_mask = global_preprocessed["observed_mask"]
+    additive_noise_diag = None
+    if noise == "additive":
+        additive_noise_diag = _additive_noise_variance(
+            tau, global_preprocessed["sd_Z"][p1:], scale_Z,
+        )
 
     def _project(cov_mat, R=None):
         if mode == "ADMM":
@@ -214,8 +244,13 @@ def _cv_covariance_matrices_block(
     mat_corrupted = mat[:, start:p]
 
     if noise == "additive":
-        cov_modified = (1 / n) * mat_corrupted.T @ mat_corrupted - tau ** 2 * np.eye(p2)
+        if additive_noise_diag is None:
+            additive_noise_diag = np.full(p2, tau ** 2)
+        cov_modified = (1 / n) * mat_corrupted.T @ mat_corrupted - np.diag(additive_noise_diag)
     elif noise == "missing":
+        _validate_ratio_matrix(ratio_matrix)
+        if observed_mask is None:
+            raise ValueError("observed_mask is required for missing data")
         cov_modified = (1 / n) * mat_corrupted.T @ mat_corrupted / ratio_matrix
     else:
         raise ValueError(f"Unknown noise type: {noise}")
@@ -227,28 +262,66 @@ def _cv_covariance_matrices_block(
     list_PSD_error = []
     list_sigma_lasso = []
     list_sigma_error = []
+    list_ratio_lasso = []
+    list_ratio_error = []
+    list_X1_lasso = []
+    list_Z2_lasso = []
+    list_y_lasso = []
+    list_X1_error = []
+    list_Z2_error = []
+    list_y_error = []
 
-    for i in range(1, K + 1):
-        index = np.where(folds == i)[0]
+    for index in fold_indices:
+        train_index = np.setdiff1d(np.arange(n), index, assume_unique=False)
+        n_without_fold = len(train_index)
+        n_one_fold = len(index)
 
-        mat_train_corrupted = np.delete(mat_corrupted, index, axis=0)
-        mat_test_corrupted = mat_corrupted[index]
+        train_preprocessed = _preprocess_data(
+            Z[train_index], y[train_index], n_without_fold, p,
+            center_Z, scale_Z, center_y, scale_y, noise, p1, p2,
+        )
+        test_preprocessed = _apply_preprocess_data(
+            Z[index], y[index],
+            train_preprocessed["mean_Z"], train_preprocessed["sd_Z"],
+            train_preprocessed["mean_y"], train_preprocessed["sd_y"],
+            center_Z, scale_Z, center_y, scale_y, noise, p1, p2,
+        )
+
+        mat_train = train_preprocessed["Z"]
+        mat_test = test_preprocessed["Z"]
+        mat_train_uncorrupted = mat_train[:, :p1]
+        mat_test_uncorrupted = mat_test[:, :p1]
+        mat_train_corrupted = mat_train[:, start:p]
+        mat_test_corrupted = mat_test[:, start:p]
 
         if noise == "additive":
-            cov_train = (1 / n_without_fold) * mat_train_corrupted.T @ mat_train_corrupted - tau ** 2 * np.eye(p2)
-            cov_test = (1 / n_one_fold) * mat_test_corrupted.T @ mat_test_corrupted - tau ** 2 * np.eye(p2)
+            additive_noise_diag_fold = _additive_noise_variance(
+                tau, train_preprocessed["sd_Z"][p1:], scale_Z,
+            )
+            cov_train = (1 / n_without_fold) * mat_train_corrupted.T @ mat_train_corrupted - np.diag(additive_noise_diag_fold)
+            cov_test = (1 / n_one_fold) * mat_test_corrupted.T @ mat_test_corrupted - np.diag(additive_noise_diag_fold)
         elif noise == "missing":
-            cov_train = (1 / n_without_fold) * mat_train_corrupted.T @ mat_train_corrupted / ratio_matrix
-            cov_test = (1 / n_one_fold) * mat_test_corrupted.T @ mat_test_corrupted / ratio_matrix
+            ratio_train = train_preprocessed["ratio_matrix"]
+            ratio_test = _ratio_matrix_from_mask(test_preprocessed["observed_mask"])
+            _validate_ratio_matrix(ratio_train, "training ratio_matrix")
+            _validate_ratio_matrix(ratio_test, "test ratio_matrix")
+            cov_train = (1 / n_without_fold) * mat_train_corrupted.T @ mat_train_corrupted / ratio_train
+            cov_test = (1 / n_one_fold) * mat_test_corrupted.T @ mat_test_corrupted / ratio_test
 
-        list_PSD_lasso.append(_project(cov_train, R=ratio_matrix if noise == "missing" else None))
-        list_PSD_error.append(_project(cov_test, R=ratio_matrix if noise == "missing" else None))
-
-        mat_train_uncorrupted = np.delete(mat_uncorrupted, index, axis=0)
-        mat_test_uncorrupted = mat_uncorrupted[index]
+        list_PSD_lasso.append(_project(cov_train, R=ratio_train if noise == "missing" else None))
+        list_PSD_error.append(_project(cov_test, R=ratio_test if noise == "missing" else None))
+        if noise == "missing":
+            list_ratio_lasso.append(ratio_train)
+            list_ratio_error.append(ratio_test)
 
         list_sigma_lasso.append((1 / n_without_fold) * mat_train_uncorrupted.T @ mat_train_uncorrupted)
         list_sigma_error.append((1 / n_one_fold) * mat_test_uncorrupted.T @ mat_test_uncorrupted)
+        list_X1_lasso.append(mat_train_uncorrupted)
+        list_Z2_lasso.append(mat_train_corrupted)
+        list_y_lasso.append(train_preprocessed["y"])
+        list_X1_error.append(mat_test_uncorrupted)
+        list_Z2_error.append(mat_test_corrupted)
+        list_y_error.append(test_preprocessed["y"])
 
     return {
         "sigma_global_uncorrupted": sigma_global_uncorrupted,
@@ -257,7 +330,15 @@ def _cv_covariance_matrices_block(
         "list_PSD_error": list_PSD_error,
         "list_sigma_lasso": list_sigma_lasso,
         "list_sigma_error": list_sigma_error,
-        "folds": folds,
+        "list_ratio_lasso": list_ratio_lasso,
+        "list_ratio_error": list_ratio_error,
+        "list_X1_lasso": list_X1_lasso,
+        "list_Z2_lasso": list_Z2_lasso,
+        "list_y_lasso": list_y_lasso,
+        "list_X1_error": list_X1_error,
+        "list_Z2_error": list_Z2_error,
+        "list_y_error": list_y_error,
+        "fold_indices": fold_indices,
     }
 
 
@@ -284,6 +365,7 @@ def _blockwise_coordinate_descent(
     penalty: str = "lasso",
     mode: str = "ADMM",
     solver: str = "coordinate_descent",
+    alpha: Optional[float] = None,
 ) -> Dict:
     """
     BD-CoCoLasso 的块坐标下降算法。
@@ -322,8 +404,17 @@ def _blockwise_coordinate_descent(
         'data_error', 'data_beta', 'early_stopping',
         'mean_Z', 'sd_Z', 'mean_y', 'sd_y'
     """
-    if lambda_factor is None:
-        lambda_factor = 0.01 if n < p else 0.001
+    _validate_common_options(
+        noise=noise,
+        allowed_noises={"additive", "missing"},
+        penalty=penalty,
+        mode=mode,
+        solver=solver,
+        tau=tau,
+        tau_required=noise == "additive",
+    )
+    if p1 < 0 or p2 <= 0:
+        raise ValueError("p1 must be non-negative and p2 must be positive")
 
     preprocessed = _preprocess_data(
         Z, y, n, p, center_Z, scale_Z, center_y, scale_y, noise, p1, p2,
@@ -331,37 +422,61 @@ def _blockwise_coordinate_descent(
     Z_proc = preprocessed["Z"]
     y_proc = preprocessed["y"]
     ratio_matrix = preprocessed["ratio_matrix"]
+    observed_mask = preprocessed["observed_mask"]
+    additive_noise_diag = None
+    if noise == "additive":
+        additive_noise_diag = _additive_noise_variance(tau, preprocessed["sd_Z"][p1:], scale_Z)
+
+    if alpha is not None:
+        if alpha < 0:
+            raise ValueError("alpha must be non-negative")
+        step = 1
+        lam_max = float(alpha)
+        lambda_list = np.array([float(alpha)])
+    else:
+        if lambda_factor is None:
+            lambda_factor = 0.01 if n < p else 0.001
+        lam_max = _lambda_max_block(Z_proc, y_proc, n, p1, p2, ratio_matrix, noise)
+        if not np.isfinite(lam_max) or lam_max <= 0:
+            lambda_list = np.zeros(step)
+        else:
+            lam_min = lambda_factor * lam_max
+            lambda_list = _log_space(lam_max, lam_min, step)
 
     earlyStopping = step
-    lam_max = _lambda_max_block(Z_proc, y_proc, n, p1, p2, ratio_matrix, noise)
-    lam_min = lambda_factor * lam_max
-    lambda_list = _log_space(lam_max, lam_min, step)
 
     beta1_start = np.zeros(p1)
     beta2_start = np.zeros(p2)
     beta_start = np.concatenate([beta1_start, beta2_start])
     best_lambda = lam_max
     beta_opt = beta_start.copy()
-    best_error = 10000.0
+    best_error = np.inf
     error_list = np.zeros((step, 4))
     error = 0.0
     earlyStopping_high = 0
     matrix_beta = np.zeros((step, p))
 
     output = _cv_covariance_matrices_block(
-        K=K, mat=Z_proc, y=y_proc, p=p, p1=p1, p2=p2, mu=mu, tau=tau,
-        ratio_matrix=ratio_matrix, etol=etol, noise=noise, mode=mode,
+        K=K, Z=Z, y=y, p=p, p1=p1, p2=p2,
+        center_Z=center_Z, scale_Z=scale_Z, center_y=center_y, scale_y=scale_y,
+        mu=mu, tau=tau, global_preprocessed=preprocessed,
+        etol=etol, noise=noise, mode=mode,
     )
     list_PSD_lasso = output["list_PSD_lasso"]
     list_PSD_error = output["list_PSD_error"]
     list_sigma_lasso = output["list_sigma_lasso"]
     list_sigma_error = output["list_sigma_error"]
+    list_ratio_lasso = output["list_ratio_lasso"]
+    list_ratio_error = output["list_ratio_error"]
+    list_X1_lasso = output["list_X1_lasso"]
+    list_Z2_lasso = output["list_Z2_lasso"]
+    list_y_lasso = output["list_y_lasso"]
+    list_X1_error = output["list_X1_error"]
+    list_Z2_error = output["list_Z2_error"]
+    list_y_error = output["list_y_error"]
     sigma1 = output["sigma_global_uncorrupted"]
     sigma2 = output["sigma_global_corrupted"]
-    folds = output["folds"]
-
-    n_without_fold = n - n // K
-    n_one_fold = n // K
+    fold_indices = output["fold_indices"]
     X1 = Z_proc[:, :p1]
     Z2 = Z_proc[:, p1:]
 
@@ -370,19 +485,22 @@ def _blockwise_coordinate_descent(
         error_old = error
 
         cv_errors = []
-        for k in range(K):
-            index = np.where(folds == k + 1)[0]
+        for k in range(len(fold_indices)):
+            n_without_fold = list_y_lasso[k].shape[0]
+            n_one_fold = list_y_error[k].shape[0]
             sigma_corrupted_train = list_PSD_lasso[k]
             sigma_uncorrupted_train = list_sigma_lasso[k]
+            ratio_train = list_ratio_lasso[k] if noise == "missing" else ratio_matrix
+            ratio_test = list_ratio_error[k] if noise == "missing" else ratio_matrix
 
-            X1_cv_train = np.delete(X1, index, axis=0)
-            Z2_cv_train = np.delete(Z2, index, axis=0)
-            y_cv_train = np.delete(y_proc, index)
+            X1_cv_train = list_X1_lasso[k]
+            Z2_cv_train = list_Z2_lasso[k]
+            y_cv_train = list_y_lasso[k]
 
             out = _lasso_covariance_block(
                 n=n_without_fold, p1=p1, p2=p2, X1=X1_cv_train, Z2=Z2_cv_train,
                 y=y_cv_train, sigma1=sigma_uncorrupted_train, sigma2=sigma_corrupted_train,
-                lambda_val=lambda_step, noise=noise, ratio_matrix=ratio_matrix,
+                lambda_val=lambda_step, noise=noise, ratio_matrix=ratio_train,
                 beta1_start=beta1_start, beta2_start=beta2_start, penalty=penalty,
                 solver=solver,
             )
@@ -391,16 +509,16 @@ def _blockwise_coordinate_descent(
 
             sigma_corrupted_test = list_PSD_error[k]
             sigma_uncorrupted_test = list_sigma_error[k]
-            X1_cv_test = X1[index]
-            Z2_cv_test = Z2[index]
-            y_cv_test = y_proc[index]
+            X1_cv_test = list_X1_error[k]
+            Z2_cv_test = list_Z2_error[k]
+            y_cv_test = list_y_error[k]
 
             rho_1 = (1 / n_one_fold) * X1_cv_test.T @ y_cv_test
             if noise == "additive":
                 rho_2 = (1 / n_one_fold) * Z2_cv_test.T @ y_cv_test
                 sigma3 = (1 / n_one_fold) * Z2_cv_test.T @ X1_cv_test @ beta1_lambda
             else:
-                Z2_tilde = Z2_cv_test / np.diag(ratio_matrix)[np.newaxis, :]
+                Z2_tilde = Z2_cv_test / np.diag(ratio_test)[np.newaxis, :]
                 rho_2 = (1 / n_one_fold) * Z2_tilde.T @ y_cv_test
                 sigma3 = (1 / n_one_fold) * Z2_tilde.T @ X1_cv_test @ beta1_lambda
 
@@ -651,32 +769,35 @@ class BDCoCoLasso(BaseEstimator, RegressorMixin):
             penalty=self.penalty,
             mode=self.mode,
             solver=self.solver,
+            alpha=self.alpha,
         )
 
-        self.coef_ = result["beta_opt"]
-        self.coef_sd_ = result["beta_sd"]
+        self.coef_scaled_ = result["beta_opt"]
+        self.coef_sd_scaled_ = result["beta_sd"]
         self.lambda_opt_ = result["lambda_opt"]
         self.lambda_sd_ = result["lambda_sd"]
         self.cv_results_ = result["data_error"]
-        self.coef_path_ = result["data_beta"]
+        self.coef_path_scaled_ = result["data_beta"]
         self.n_iter_ = result["early_stopping"]
         self.mean_Z_ = result["mean_Z"]
         self.sd_Z_ = result["sd_Z"]
         self.mean_y_ = result["mean_y"]
         self.sd_y_ = result["sd_y"]
 
-        sd_Z_safe = np.where(self.sd_Z_ != 0, self.sd_Z_, 1.0)
-        coef_original = self.coef_ * self.sd_y_ / sd_Z_safe
-        self.intercept_ = (
-            self.mean_y_
-            - np.dot(self.mean_Z_, coef_original)
+        feature_scale = self.sd_Z_ if self.scale_Z else np.ones_like(self.sd_Z_)
+        response_scale = self.sd_y_ if self.scale_y else 1.0
+        self.coef_ = _restore_coefficients(self.coef_scaled_, feature_scale, response_scale)
+        self.coef_sd_ = _restore_coefficients(self.coef_sd_scaled_, feature_scale, response_scale)
+        self.coef_path_ = _restore_coefficient_path(self.coef_path_scaled_, feature_scale, response_scale)
+        self.intercept_ = _restore_intercept(
+            self.mean_Z_, self.mean_y_, self.coef_, self.center_Z, self.center_y,
         )
 
         return self
 
     def predict(self, Z):
         Z = np.asarray(Z, dtype=float)
-        Z_clean = np.where(np.isnan(Z), 0.0, Z)
+        Z_clean = np.where(np.isnan(Z), self.mean_Z_, Z)
         return Z_clean @ self.coef_ + self.intercept_
 
     def score(self, Z, y):

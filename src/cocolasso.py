@@ -12,13 +12,22 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from typing import Optional, Dict
 
 from ._utils import (
+    _additive_noise_variance,
     _admm_proj,
+    _apply_preprocess_data,
     _hm_proj,
     _lasso_covariance,
     _lasso_sklearn,
     _corrected_covariance_multiplicative,
     _log_space,
+    _make_cv_folds,
     _preprocess_data,
+    _ratio_matrix_from_mask,
+    _restore_coefficient_path,
+    _restore_coefficients,
+    _restore_intercept,
+    _validate_common_options,
+    _validate_ratio_matrix,
 )
 
 
@@ -48,12 +57,16 @@ def _lambda_max(Z: np.ndarray, y: np.ndarray, n: int,
 
 def _cv_covariance_matrices(
     K: int,
-    mat: np.ndarray,
+    Z: np.ndarray,
     y: np.ndarray,
     p: int,
+    center_Z: bool = True,
+    scale_Z: bool = True,
+    center_y: bool = True,
+    scale_y: bool = True,
     mu: float = 1.0,
     tau: Optional[float] = None,
-    ratio_matrix: Optional[np.ndarray] = None,
+    global_preprocessed: Optional[Dict] = None,
     etol: float = 1e-4,
     noise: str = "additive",
     mode: str = "ADMM",
@@ -69,7 +82,7 @@ def _cv_covariance_matrices(
     参数
     ----------
     K : int, 交叉验证折数
-    mat : (n, p) ndarray, 设计矩阵
+    Z : (n, p) ndarray, 原始设计矩阵
     y : (n,) ndarray, 响应向量
     p : int, 特征数
     mu : float, ADMM 惩罚参数
@@ -86,11 +99,23 @@ def _cv_covariance_matrices(
         'list_matrices_lasso', 'list_matrices_error',
         'list_rho_lasso', 'list_rho_error'
     """
-    n = mat.shape[0]
-    n_without_fold = n - n // K
-    n_one_fold = n // K
+    n = Z.shape[0]
+    fold_indices = _make_cv_folds(n, K)
 
-    folds = np.random.permutation(np.repeat(np.arange(1, K + 1), n // K))
+    if global_preprocessed is None:
+        global_preprocessed = _preprocess_data(
+            Z, y, n, p, center_Z, scale_Z, center_y, scale_y, noise,
+        )
+
+    mat = global_preprocessed["Z"]
+    y_proc = global_preprocessed["y"]
+    ratio_matrix = global_preprocessed["ratio_matrix"]
+    observed_mask = global_preprocessed["observed_mask"]
+    additive_noise_diag = None
+    if noise == "additive":
+        additive_noise_diag = _additive_noise_variance(
+            tau, global_preprocessed["sd_Z"], scale_Z,
+        )
 
     def _project(cov_mat, R=None):
         if mode == "ADMM":
@@ -99,18 +124,23 @@ def _cv_covariance_matrices(
             return _hm_proj(cov_mat, R=R, mu=mu, tolerance=etol)
 
     if noise == "additive":
-        cov_modified = (1 / n) * mat.T @ mat - tau ** 2 * np.eye(p)
+        if additive_noise_diag is None:
+            additive_noise_diag = np.full(p, tau ** 2)
+        cov_modified = (1 / n) * mat.T @ mat - np.diag(additive_noise_diag)
         sigma_global = _project(cov_modified)
-        rho_global = (1 / n) * mat.T @ y
+        rho_global = (1 / n) * mat.T @ y_proc
 
     elif noise == "missing":
+        _validate_ratio_matrix(ratio_matrix)
+        if observed_mask is None:
+            raise ValueError("observed_mask is required for missing data")
         cov_modified = (1 / n) * mat.T @ mat / ratio_matrix
         sigma_global = _project(cov_modified, R=ratio_matrix)
-        rho_global = (1 / n) * mat.T @ y / np.diag(ratio_matrix)
+        rho_global = (1 / n) * mat.T @ y_proc / np.diag(ratio_matrix)
 
     elif noise == "multiplicative":
         Gamma_global, rho_global = _corrected_covariance_multiplicative(
-            mat, y, n, p, tau)
+            mat, y_proc, n, p, tau)
         sigma_global = _project(Gamma_global)
 
     else:
@@ -121,33 +151,52 @@ def _cv_covariance_matrices(
     list_rho_lasso = []
     list_rho_error = []
 
-    for i in range(1, K + 1):
-        index = np.where(folds == i)[0]
+    for index in fold_indices:
+        train_index = np.setdiff1d(np.arange(n), index, assume_unique=False)
+        n_without_fold = len(train_index)
+        n_one_fold = len(index)
 
-        mat_train = np.delete(mat, index, axis=0)
-        y_train = np.delete(y, index)
+        train_preprocessed = _preprocess_data(
+            Z[train_index], y[train_index], n_without_fold, p,
+            center_Z, scale_Z, center_y, scale_y, noise,
+        )
+        test_preprocessed = _apply_preprocess_data(
+            Z[index], y[index],
+            train_preprocessed["mean_Z"], train_preprocessed["sd_Z"],
+            train_preprocessed["mean_y"], train_preprocessed["sd_y"],
+            center_Z, scale_Z, center_y, scale_y, noise,
+        )
 
-        mat_test = mat[index]
-        y_test = y[index]
+        mat_train = train_preprocessed["Z"]
+        y_train = train_preprocessed["y"]
+        mat_test = test_preprocessed["Z"]
+        y_test = test_preprocessed["y"]
 
         if noise == "additive":
-            cov_train = (1 / n_without_fold) * mat_train.T @ mat_train - tau ** 2 * np.eye(p)
-            cov_test = (1 / n_one_fold) * mat_test.T @ mat_test - tau ** 2 * np.eye(p)
+            additive_noise_diag_fold = _additive_noise_variance(
+                tau, train_preprocessed["sd_Z"], scale_Z,
+            )
+            cov_train = (1 / n_without_fold) * mat_train.T @ mat_train - np.diag(additive_noise_diag_fold)
+            cov_test = (1 / n_one_fold) * mat_test.T @ mat_test - np.diag(additive_noise_diag_fold)
             rho_train = (1 / n_without_fold) * mat_train.T @ y_train
             rho_test = (1 / n_one_fold) * mat_test.T @ y_test
         elif noise == "missing":
-            cov_train = (1 / n_without_fold) * mat_train.T @ mat_train / ratio_matrix
-            cov_test = (1 / n_one_fold) * mat_test.T @ mat_test / ratio_matrix
-            rho_train = (1 / n_without_fold) * mat_train.T @ y_train / np.diag(ratio_matrix)
-            rho_test = (1 / n_one_fold) * mat_test.T @ y_test / np.diag(ratio_matrix)
+            ratio_train = train_preprocessed["ratio_matrix"]
+            ratio_test = _ratio_matrix_from_mask(test_preprocessed["observed_mask"])
+            _validate_ratio_matrix(ratio_train, "training ratio_matrix")
+            _validate_ratio_matrix(ratio_test, "test ratio_matrix")
+            cov_train = (1 / n_without_fold) * mat_train.T @ mat_train / ratio_train
+            cov_test = (1 / n_one_fold) * mat_test.T @ mat_test / ratio_test
+            rho_train = (1 / n_without_fold) * mat_train.T @ y_train / np.diag(ratio_train)
+            rho_test = (1 / n_one_fold) * mat_test.T @ y_test / np.diag(ratio_test)
         elif noise == "multiplicative":
             cov_train, rho_train = _corrected_covariance_multiplicative(
                 mat_train, y_train, n_without_fold, p, tau)
             cov_test, rho_test = _corrected_covariance_multiplicative(
                 mat_test, y_test, n_one_fold, p, tau)
 
-        list_matrices_lasso.append(_project(cov_train, R=ratio_matrix if noise == "missing" else None))
-        list_matrices_error.append(_project(cov_test, R=ratio_matrix if noise == "missing" else None))
+        list_matrices_lasso.append(_project(cov_train, R=ratio_train if noise == "missing" else None))
+        list_matrices_error.append(_project(cov_test, R=ratio_test if noise == "missing" else None))
         list_rho_lasso.append(rho_train)
         list_rho_error.append(rho_test)
 
@@ -158,6 +207,7 @@ def _cv_covariance_matrices(
         "list_matrices_error": list_matrices_error,
         "list_rho_lasso": list_rho_lasso,
         "list_rho_error": list_rho_error,
+        "fold_indices": fold_indices,
     }
 
 
@@ -182,6 +232,7 @@ def _pathwise_coordinate_descent(
     penalty: str = "lasso",
     mode: str = "ADMM",
     solver: str = "coordinate_descent",
+    alpha: Optional[float] = None,
 ) -> Dict:
     """
     CoCoLasso 的路径坐标下降算法。
@@ -220,31 +271,53 @@ def _pathwise_coordinate_descent(
         'data_error', 'data_beta', 'early_stopping',
         'mean_Z', 'sd_Z', 'mean_y', 'sd_y'
     """
-    if lambda_factor is None:
-        lambda_factor = 0.01 if n < p else 0.001
+    _validate_common_options(
+        noise=noise,
+        allowed_noises={"additive", "missing", "multiplicative"},
+        penalty=penalty,
+        mode=mode,
+        solver=solver,
+        tau=tau,
+        tau_required=noise in {"additive", "multiplicative"},
+    )
 
     preprocessed = _preprocess_data(Z, y, n, p, center_Z, scale_Z, center_y, scale_y, noise)
     Z_proc = preprocessed["Z"]
     y_proc = preprocessed["y"]
     ratio_matrix = preprocessed["ratio_matrix"]
 
+    if alpha is not None:
+        if alpha < 0:
+            raise ValueError("alpha must be non-negative")
+        step = 1
+        lam_max = float(alpha)
+        lambda_list = np.array([float(alpha)])
+    else:
+        if lambda_factor is None:
+            lambda_factor = 0.01 if n < p else 0.001
+        lam_max = _lambda_max(Z_proc, y_proc, n, ratio_matrix, noise, tau)
+        if not np.isfinite(lam_max) or lam_max <= 0:
+            lambda_list = np.zeros(step)
+        else:
+            lam_min = lambda_factor * lam_max
+            lambda_list = _log_space(lam_max, lam_min, step)
+
     earlyStopping = step
-    lam_max = _lambda_max(Z_proc, y_proc, n, ratio_matrix, noise, tau)
-    lam_min = lambda_factor * lam_max
-    lambda_list = _log_space(lam_max, lam_min, step)
 
     beta_start = np.zeros(p)
     best_lambda = lam_max
     beta_opt = beta_start.copy()
-    best_error = 1000.0
+    best_error = np.inf
     error_list = np.zeros((step, 4))
     error = 1000.0
     earlyStopping_high = 0
     matrix_beta = np.zeros((step, p))
 
     output = _cv_covariance_matrices(
-        K=K, mat=Z_proc, y=y_proc, p=p, mu=mu, tau=tau,
-        ratio_matrix=ratio_matrix, etol=etol, noise=noise, mode=mode,
+        K=K, Z=Z, y=y, p=p,
+        center_Z=center_Z, scale_Z=scale_Z, center_y=center_y, scale_y=scale_y,
+        mu=mu, tau=tau, global_preprocessed=preprocessed,
+        etol=etol, noise=noise, mode=mode,
     )
     list_matrices_lasso = output["list_matrices_lasso"]
     list_matrices_error = output["list_matrices_error"]
@@ -263,12 +336,12 @@ def _pathwise_coordinate_descent(
             rho_train = list_rho_lasso[k]
             if solver == "sklearn":
                 coef_lambda = _lasso_sklearn(
-                    n=n, p=p, lambda_val=lambda_step, XX=sigma_train, Xy=rho_train,
+                    n=n - len(output["fold_indices"][k]), p=p, lambda_val=lambda_step, XX=sigma_train, Xy=rho_train,
                     beta_start=beta_start,
                 )["coefficients"]
             else:
                 coef_lambda = _lasso_covariance(
-                    n=n, p=p, lambda_val=lambda_step, XX=sigma_train, Xy=rho_train,
+                    n=n - len(output["fold_indices"][k]), p=p, lambda_val=lambda_step, XX=sigma_train, Xy=rho_train,
                     beta_start=beta_start, penalty=penalty,
                 )["coefficients"]
 
@@ -358,8 +431,8 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
 
     参数
     ----------
-    alpha : float, 默认=1.0
-        正则化强度参数。当 alpha=None 时，通过交叉验证自动选取。
+    alpha : float or None, 默认=None
+        固定正则化强度；当 alpha=None 时，通过交叉验证自动选取。
     noise : str, 默认="additive"
         噪声类型，可选 "additive"（加性）、"missing"（缺失）、
         "multiplicative"（乘性）。
@@ -502,32 +575,35 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
             penalty=self.penalty,
             mode=self.mode,
             solver=self.solver,
+            alpha=self.alpha,
         )
 
-        self.coef_ = result["beta_opt"]
-        self.coef_sd_ = result["beta_sd"]
+        self.coef_scaled_ = result["beta_opt"]
+        self.coef_sd_scaled_ = result["beta_sd"]
         self.lambda_opt_ = result["lambda_opt"]
         self.lambda_sd_ = result["lambda_sd"]
         self.cv_results_ = result["data_error"]
-        self.coef_path_ = result["data_beta"]
+        self.coef_path_scaled_ = result["data_beta"]
         self.n_iter_ = result["early_stopping"]
         self.mean_Z_ = result["mean_Z"]
         self.sd_Z_ = result["sd_Z"]
         self.mean_y_ = result["mean_y"]
         self.sd_y_ = result["sd_y"]
 
-        sd_Z_safe = np.where(self.sd_Z_ != 0, self.sd_Z_, 1.0)
-        coef_original = self.coef_ * self.sd_y_ / sd_Z_safe
-        self.intercept_ = (
-            self.mean_y_
-            - np.dot(self.mean_Z_, coef_original)
+        feature_scale = self.sd_Z_ if self.scale_Z else np.ones_like(self.sd_Z_)
+        response_scale = self.sd_y_ if self.scale_y else 1.0
+        self.coef_ = _restore_coefficients(self.coef_scaled_, feature_scale, response_scale)
+        self.coef_sd_ = _restore_coefficients(self.coef_sd_scaled_, feature_scale, response_scale)
+        self.coef_path_ = _restore_coefficient_path(self.coef_path_scaled_, feature_scale, response_scale)
+        self.intercept_ = _restore_intercept(
+            self.mean_Z_, self.mean_y_, self.coef_, self.center_Z, self.center_y,
         )
 
         return self
 
     def predict(self, Z):
         Z = np.asarray(Z, dtype=float)
-        Z_clean = np.where(np.isnan(Z), 0.0, Z)
+        Z_clean = np.where(np.isnan(Z), self.mean_Z_, Z)
         return Z_clean @ self.coef_ + self.intercept_
 
     def score(self, Z, y):
