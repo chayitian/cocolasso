@@ -270,7 +270,7 @@ def _cv_covariance_matrices_block_general(
         additive_noise_diag = np.full(p2, tau ** 2)
     _validate_ratio_matrix(ratio_matrix)
     if observed_mask is None:
-        raise ValueError("observed_mask is required for missing data")
+        raise ValueError("缺失数据需要 observed_mask")
 
     cov_modified_additive = (1 / n) * mat_corrupted_additive.T @ mat_corrupted_additive - np.diag(additive_noise_diag)
     cov_modified_missing = (1 / n) * mat_corrupted_missing.T @ mat_corrupted_missing / ratio_matrix
@@ -457,7 +457,7 @@ def _blockwise_coordinate_descent_general(
         tau_required=True,
     )
     if p1 < 0 or p2 <= 0 or p3 <= 0:
-        raise ValueError("p1 must be non-negative, and p2 and p3 must be positive")
+        raise ValueError("p1 必须非负，且 p2 和 p3 必须为正")
 
     preprocessed = _preprocess_data(
         Z, y, n, p, center_Z, scale_Z, center_y, scale_y,
@@ -476,7 +476,7 @@ def _blockwise_coordinate_descent_general(
     Z3 = Z_proc[:, p1 + p2:p]
     if alpha is not None:
         if alpha < 0:
-            raise ValueError("alpha must be non-negative")
+            raise ValueError("alpha 必须非负")
         step = 1
         lam_max = float(alpha)
         lambda_list = np.array([float(alpha)])

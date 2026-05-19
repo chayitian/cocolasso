@@ -10,11 +10,11 @@ from typing import Optional, Dict
 
 
 def _make_cv_folds(n: int, K: int) -> list:
-    """Create K non-empty random folds, keeping all samples when n is not divisible by K."""
+    """创建 K 个非空随机折，当 n 不能被 K 整除时保留所有样本。"""
     if K < 2:
-        raise ValueError("K must be at least 2")
+        raise ValueError("K 必须至少为 2")
     if K > n:
-        raise ValueError("K cannot exceed the number of samples")
+        raise ValueError("K 不能超过样本数")
     return [fold for fold in np.array_split(np.random.permutation(n), K) if len(fold) > 0]
 
 
@@ -27,27 +27,27 @@ def _validate_common_options(
     tau: Optional[float] = None,
     tau_required: bool = False,
 ) -> None:
-    """Validate shared estimator/function options before numerical work starts."""
+    """在数值计算开始前校验共享的估计器/函数选项。"""
     if noise is not None and allowed_noises is not None and noise not in allowed_noises:
-        raise ValueError(f"noise must be one of {sorted(allowed_noises)}, got {noise!r}")
+        raise ValueError(f"noise 必须是 {sorted(allowed_noises)} 之一，得到 {noise!r}")
     if penalty not in {"lasso", "SCAD"}:
-        raise ValueError("penalty must be 'lasso' or 'SCAD'")
+        raise ValueError("penalty 必须为 'lasso' 或 'SCAD'")
     if mode not in {"ADMM", "HM"}:
-        raise ValueError("mode must be 'ADMM' or 'HM'")
+        raise ValueError("mode 必须为 'ADMM' 或 'HM'")
     if solver not in {"coordinate_descent", "sklearn"}:
-        raise ValueError("solver must be 'coordinate_descent' or 'sklearn'")
+        raise ValueError("solver 必须为 'coordinate_descent' 或 'sklearn'")
     if solver == "sklearn" and penalty != "lasso":
-        raise ValueError('solver="sklearn" only supports penalty="lasso"')
+        raise ValueError('solver="sklearn" 仅支持 penalty="lasso"')
     if tau_required and tau is None:
-        raise ValueError("tau must be provided for additive or multiplicative error")
+        raise ValueError("加性或乘性误差必须提供 tau")
     if tau is not None and tau < 0:
-        raise ValueError("tau must be non-negative")
+        raise ValueError("tau 必须非负")
 
 
 def _additive_noise_variance(tau: float, sd_Z: np.ndarray, scale_Z: bool) -> np.ndarray:
-    """Return diagonal additive-error variance on the current preprocessed Z scale."""
+    """返回当前预处理 Z 尺度下的对角加性误差方差。"""
     if tau is None:
-        raise ValueError("tau must be provided for additive error")
+        raise ValueError("加性误差必须提供 tau")
     sd_Z = np.asarray(sd_Z, dtype=float)
     if scale_Z:
         sd_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
@@ -56,13 +56,13 @@ def _additive_noise_variance(tau: float, sd_Z: np.ndarray, scale_Z: bool) -> np.
 
 
 def _restore_coefficients(beta: np.ndarray, sd_Z: np.ndarray, sd_y: float) -> np.ndarray:
-    """Convert coefficients from preprocessed scale back to original feature scale."""
+    """将系数从预处理尺度还原为原始特征尺度。"""
     sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
     return beta * sd_y / sd_Z_safe
 
 
 def _restore_coefficient_path(data_beta: Dict, sd_Z: np.ndarray, sd_y: float) -> Dict:
-    """Convert a coefficient path from preprocessed scale to original feature scale."""
+    """将系数路径从预处理尺度还原为原始特征尺度。"""
     beta_path = data_beta["beta"]
     sd_Z_safe = np.where(np.isfinite(sd_Z) & (sd_Z != 0), sd_Z, 1.0)
     return {
@@ -78,7 +78,7 @@ def _restore_intercept(
     center_Z: bool,
     center_y: bool,
 ) -> float:
-    """Restore the intercept implied by the preprocessing actually used for fitting."""
+    """根据拟合时实际使用的预处理方式还原截距。"""
     y_offset = mean_y if center_y else 0.0
     z_offset = mean_Z if center_Z else np.zeros_like(mean_Z)
     return float(y_offset - np.dot(z_offset, coef))
@@ -99,7 +99,7 @@ def _apply_preprocess_data(
     p1: int = 0,
     p2: int = 0,
 ) -> Dict:
-    """Apply previously fitted preprocessing parameters to a new split."""
+    """将已拟合的预处理参数应用到新的数据划分上。"""
     Z = Z.copy().astype(float)
     y = y.copy().astype(float).ravel()
     observed_mask = None
@@ -147,19 +147,19 @@ def _apply_preprocess_data(
 
 
 def _ratio_matrix_from_mask(mask: np.ndarray) -> np.ndarray:
-    """Compute pairwise observed ratios from a boolean observed-value mask."""
+    """从布尔观测值掩码计算成对观测比率矩阵。"""
     mask_float = mask.astype(float)
     return (mask_float.T @ mask_float) / mask.shape[0]
 
 
 def _validate_ratio_matrix(ratio_matrix: np.ndarray, context: str = "ratio_matrix") -> None:
-    """Fail fast when missing-data ratios would cause division by zero or NaN."""
+    """当缺失数据比率会导致除零或 NaN 时快速报错。"""
     if ratio_matrix is None:
-        raise ValueError(f"{context} is required for missing data")
+        raise ValueError(f"{context} 是缺失数据所必需的")
     if not np.all(np.isfinite(ratio_matrix)):
-        raise ValueError(f"{context} contains NaN or Inf")
+        raise ValueError(f"{context} 包含 NaN 或 Inf")
     if np.any(ratio_matrix <= 0):
-        raise ValueError(f"{context} contains zero observed pairs; cannot correct missing data")
+        raise ValueError(f"{context} 包含零观测对；无法校正缺失数据")
 
 
 def _l1_proj(v: np.ndarray, b: float) -> np.ndarray:

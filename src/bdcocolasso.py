@@ -119,7 +119,7 @@ def _lasso_covariance_block(
         rho1 = (1 / n) * X1.T @ y
         rho2 = (1 / n) * (Z2.T @ y) / np.diag(ratio_matrix)
     else:
-        raise ValueError(f"Unknown noise type: {noise}")
+        raise ValueError(f"未知的噪声类型: {noise}")
 
     m = 1
     while m < max_iter:
@@ -250,10 +250,10 @@ def _cv_covariance_matrices_block(
     elif noise == "missing":
         _validate_ratio_matrix(ratio_matrix)
         if observed_mask is None:
-            raise ValueError("observed_mask is required for missing data")
+            raise ValueError("缺失数据需要 observed_mask")
         cov_modified = (1 / n) * mat_corrupted.T @ mat_corrupted / ratio_matrix
     else:
-        raise ValueError(f"Unknown noise type: {noise}")
+        raise ValueError(f"未知的噪声类型: {noise}")
 
     sigma_global_corrupted = _project(cov_modified, R=ratio_matrix if noise == "missing" else None)
     sigma_global_uncorrupted = (1 / n) * mat_uncorrupted.T @ mat_uncorrupted
@@ -414,7 +414,7 @@ def _blockwise_coordinate_descent(
         tau_required=noise == "additive",
     )
     if p1 < 0 or p2 <= 0:
-        raise ValueError("p1 must be non-negative and p2 must be positive")
+        raise ValueError("p1 必须非负且 p2 必须为正")
 
     preprocessed = _preprocess_data(
         Z, y, n, p, center_Z, scale_Z, center_y, scale_y, noise, p1, p2,
@@ -429,7 +429,7 @@ def _blockwise_coordinate_descent(
 
     if alpha is not None:
         if alpha < 0:
-            raise ValueError("alpha must be non-negative")
+            raise ValueError("alpha 必须非负")
         step = 1
         lam_max = float(alpha)
         lambda_list = np.array([float(alpha)])

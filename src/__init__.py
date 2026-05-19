@@ -78,7 +78,7 @@ def coco(
     """
     if block:
         if p1 is None or p2 is None:
-            raise ValueError("p1 and p2 must be provided when block=True")
+            raise ValueError("block=True 时必须提供 p1 和 p2")
         return _blockwise_coordinate_descent(
             Z=Z, y=y, n=n, p=p, p1=p1, p2=p2,
             center_Z=center_Z, scale_Z=scale_Z, center_y=center_y, scale_y=scale_y,

@@ -51,7 +51,7 @@ def _lambda_max(Z: np.ndarray, y: np.ndarray, n: int,
         exp_tau2_half = np.exp(tau ** 2 / 2)
         rho_tilde = ((1 / n) * Z.T @ y) / exp_tau2_half
     else:
-        raise ValueError(f"Unknown noise type: {noise}")
+        raise ValueError(f"未知的噪声类型: {noise}")
     return float(np.max(np.abs(rho_tilde)))
 
 
@@ -133,7 +133,7 @@ def _cv_covariance_matrices(
     elif noise == "missing":
         _validate_ratio_matrix(ratio_matrix)
         if observed_mask is None:
-            raise ValueError("observed_mask is required for missing data")
+            raise ValueError("缺失数据需要 observed_mask")
         cov_modified = (1 / n) * mat.T @ mat / ratio_matrix
         sigma_global = _project(cov_modified, R=ratio_matrix)
         rho_global = (1 / n) * mat.T @ y_proc / np.diag(ratio_matrix)
@@ -144,7 +144,7 @@ def _cv_covariance_matrices(
         sigma_global = _project(Gamma_global)
 
     else:
-        raise ValueError(f"Unknown noise type: {noise}")
+        raise ValueError(f"未知的噪声类型: {noise}")
 
     list_matrices_lasso = []
     list_matrices_error = []
@@ -288,7 +288,7 @@ def _pathwise_coordinate_descent(
 
     if alpha is not None:
         if alpha < 0:
-            raise ValueError("alpha must be non-negative")
+            raise ValueError("alpha 必须非负")
         step = 1
         lam_max = float(alpha)
         lambda_list = np.array([float(alpha)])
