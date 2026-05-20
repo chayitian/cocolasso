@@ -1,6 +1,6 @@
 # CoCoLasso 算法说明与理论证明
 
-本文档围绕标准 `CoCoLasso` 的实现与理论展开，对应 `src/cocolasso.py` 与 `src/_utils.py`。参考文献为 Datta and Zou (2017) 的 CoCoLasso 方法。
+本文档围绕标准 `CoCoLasso` 的实现与理论展开，对应 `src/cocolasso.py` 与 `src/_utils.py`。参考文献为 Datta and Zou (2017) 的 CoCoLasso 方法。`BDCoCoLasso`、`GeneralCoCoLasso`、`SCAD` 惩罚、`HM` 投影和 `sklearn` 伪数据求解器属于本仓库扩展或工程实现，不属于该 PDF 中标准 CoCoLasso 的理论陈述。
 
 ## 1. 模型与符号
 
@@ -41,7 +41,7 @@ $$
 其中 $\delta$ 为缺失概率，缺失机制与 $(X_i,y_i)$ 独立。记观测比例
 
 $$
-R_{jk}=\mathbb{P}(Z_{ij}\text{ 被观测}, Z_{ik}\text{ 被观测})=1-2\delta+\delta^2.
+R_{jj}=\mathbb{P}(Z_{ij}\text{ 被观测})=1-\delta, \qquad R_{jk}=\mathbb{P}(Z_{ij}\text{ 与 }Z_{ik}\text{ 同时被观测})=(1-\delta)^2\ (j\ne k).
 $$
 
 **乘性误差：**
@@ -162,11 +162,13 @@ $$
 
 #### 2.4.2 缺失数据校正（代码已实现，未纳入复现实验）
 
-在缺失数据场景中，若缺失机制与 $X_i,y_i$ 独立，则
+在缺失数据场景中，若缺失机制与 $X_i,y_i$ 独立，则对非对角元素有
 
 $$
 \mathbb{E}(Z_{ij}Z_{ik})=(1-\delta)^2\mathbb{E}(X_{ij}X_{ik})=R_{jk}\Sigma_{X,jk}.
 $$
+
+对角元素对应单个变量被观测，使用 $R_{jj}=1-\delta$。代码不假设所有特征缺失概率相同，而是直接用样本观测掩码构造 $\widehat R_{jk}$。
 
 因此 $\Sigma_{X,jk}=\mathbb{E}(Z_{ij}Z_{ik})/R_{jk}$。代码用样本观测比例
 
@@ -234,13 +236,13 @@ $$
 
 #### 2.5.1 ADMM 投影（最大范数）
 
-ADMM 投影求解以下优化问题：
+论文 Appendix A 中的 CoCoLasso 投影求解以下最大范数 PSD 投影问题：
 
 $$
 \Sigma^{\text{PSD}} = \arg\min_{\Gamma\succeq 0}\|\Gamma-\tilde{\Sigma}\|_{\max},
 $$
 
-其中 $\|\cdot\|_{\max}$ 是矩阵最大范数（逐元素绝对值的最大值）。实现中使用变量 $R,S,L$ 的 ADMM 迭代，把 PSD 约束和距离约束分离。每次迭代包括三步。
+其中 $\|\cdot\|_{\max}$ 是矩阵最大范数（逐元素绝对值的最大值）。论文通过引入辅助变量，把问题等价写成 $B=A-\tilde\Sigma$，然后对增广拉格朗日函数做 ADMM。代码中的变量名为 $R,S,L$，分别对应论文中的 PSD 变量、差异变量和拉格朗日乘子；其目标是数值近似该最大范数投影。
 
 **第一步，R 更新（PSD 投影）：** 对矩阵
 
@@ -254,7 +256,7 @@ $$
 R \leftarrow Q\operatorname{diag}\{\max(d_j,\epsilon)\}Q^\top.
 $$
 
-**第二步，S 更新（L1 投影）：** 对下三角向量做 $\ell_1$ 球投影（使用 Duchi et al. 2008 的高效算法），从而控制最大范数距离，然后对称化。
+**第二步，S 更新（L1 投影）：** 对下三角向量做 $\ell_1$ 球投影（使用 Duchi et al. 2008 的高效算法），再对称化。该步骤来自最大范数与 $\ell_1$ 球投影的对偶关系；代码使用下三角向量和半径 `mu/2` 的实现细节来避免重复计算对称矩阵元素。
 
 **第三步，L 更新（对偶变量）：**
 
@@ -264,9 +266,9 @@ $$
 
 **收敛判断：** 当 $R$、$S$ 的变化量以及原始残差 $R-S-\tilde{\Sigma}$ 均小于容差时停止。
 
-#### 2.5.2 HM-Lasso 投影（Frobenius 范数）
+#### 2.5.2 HM-Lasso 投影（Frobenius 范数，扩展选项）
 
-HM-Lasso 投影求解以下优化问题：
+HM-Lasso 投影不是 Datta & Zou (2017) PDF 中的标准 CoCoLasso 投影，而是本仓库提供的工程扩展。它求解以下 Frobenius 范数意义下的 PSD 近似问题：
 
 $$
 \Sigma^{\text{PSD}} = \arg\min_{A\succeq 0}\|A-\tilde{\Sigma}\|_F,
@@ -358,7 +360,7 @@ $$
 w_j = \begin{cases} 1 & |\beta_j| \leq \lambda \\ \frac{a\lambda - |\beta_j|}{\lambda(a-1)} & \lambda < |\beta_j| \leq a\lambda \\ 0 & |\beta_j| > a\lambda \end{cases}
 $$
 
-其中 $a=3.7$ 为默认值。SCAD 的自适应权重使得大系数不被过度惩罚，具有 oracle 性质。
+其中 $a=3.7$ 为默认值。SCAD 的自适应权重使得大系数不被过度惩罚；这是本仓库的非凸惩罚扩展，不属于 PDF 中标准 CoCoLasso 的凸 Lasso 理论。
 
 #### 2.6.2 sklearn 求解器
 
@@ -413,7 +415,7 @@ $$
 然后构造从 $\lambda_{\max}$ 到 $\lambda_{\min}=\text{lambda\_factor}\cdot\lambda_{\max}$ 的对数等间距序列：
 
 $$
-\lambda_i = \lambda_{\max} \cdot \left(\frac{\lambda_{\min}}{\lambda_{\max}}\right)^{i/(K-1)}, \quad i = 0, 1, \ldots, K-1,
+\lambda_i = \lambda_{\max} \cdot \left(\frac{\lambda_{\min}}{\lambda_{\max}}\right)^{i/(\text{step}-1)}, \quad i = 0, 1, \ldots, \text{step}-1,
 $$
 
 其中 $\text{lambda\_factor}$ 默认为 0.01（$n < p$）或 0.001（$n \geq p$）。
@@ -605,7 +607,7 @@ $$
 
 ### 4.5 当前 API 与运行入口
 
-当前仓库未提供 `requirements.txt` 或 `pyproject.toml`。直接运行核心代码至少需要 `numpy`、`scipy`、`scikit-learn`；运行复现实验脚本还需要 `pandas`。
+当前仓库提供了 `requirements.txt`。直接运行核心代码至少需要 `numpy`、`scipy`、`scikit-learn`；运行复现实验脚本还需要 `pandas`。
 
 主要公开入口：
 
@@ -692,64 +694,129 @@ python reproduce/cocolasso_simulation.py --mode full --n_mc 50 --n_bootstrap 300
 
 ---
 
-## 5. 相合性证明
+## 5. 论文定理条件、误差界与证明对应
 
-本节证明标准 CoCoLasso 估计量的相合性。证明采用高维 Lasso 的基本不等式、修正矩阵的一致性和限制特征值条件。
+本节对应 Datta & Zou (2017) Theorem 1 和 Theorem 2。重点不是重新证明一个不同的 Lasso 结论，而是说明论文定理使用的条件、结论，以及这些条件如何进入 CoCoLasso 的基本不等式推导。
 
 ### 5.1 估计量定义
 
-令 $\Sigma^{\text{PSD}}$ 表示投影后的修正 Gram 矩阵，$\tilde{\rho}$ 表示修正交叉矩。估计量定义为
+令真实 Gram 矩阵和真实交叉矩为
 
 $$
-\widehat\beta=\arg\min_{\beta}\left\{L_n(\beta)+\lambda_n\|\beta\|_1\right\},
+\Sigma=\frac{1}{n}X^\top X, \qquad \rho=\frac{1}{n}X^\top y.
 $$
 
-其中
+令 $\widetilde\Sigma$ 表示由污染数据 $Z$ 得到的修正 Gram 矩阵，$\tilde\rho$ 表示修正交叉矩。论文定义最大范数 PSD 投影
 
 $$
-L_n(\beta)=\frac{1}{2}\beta^\top\Sigma^{\text{PSD}}\beta-\tilde{\rho}^\top\beta.
+\widehat\Sigma=(\widetilde\Sigma)_+=\arg\min_{A\succeq0}\|A-\widetilde\Sigma\|_{\max}.
 $$
 
-记真实支持集为 $S=\{j:\beta_j^0\ne0\}$，$|S|=s$。记误差向量 $\Delta=\widehat\beta-\beta^*$。
-
-### 5.2 条件
-
-**条件 A1：** 样本独立同分布，$X_i$、误差变量和 $\varepsilon_i$ 具有足够的亚高斯或有限高阶矩尾部，且测量误差与 $(X_i,\varepsilon_i)$ 独立。
-
-**条件 A2：** 修正矩阵和交叉矩满足最大范数集中不等式。存在 $a_n\to0$，通常 $a_n=\sqrt{\log p/n}$，使得以概率趋于 1，
+标准 CoCoLasso 估计量为
 
 $$
-\|\tilde{\Sigma}-\Sigma_X\|_{\max}\le C_1a_n, \qquad \|\tilde{\rho}-\Sigma_X\beta^*\|_\infty\le C_2a_n.
+\widehat\beta=\arg\min_{\beta}\left\{\frac{1}{2}\beta^\top\widehat\Sigma\beta-\tilde\rho^\top\beta+\lambda\|\beta\|_1\right\}.
 $$
 
-**条件 A3：** PSD 投影误差不改变上述阶数。即存在数值误差 $r_n$，满足
+记真实支持集为 $S=\{j:\beta_j^*\ne0\}$，$|S|=s$。不失一般性，论文把真实系数写为 $\beta^*=(\beta_S^{*\top},0)^\top$。下文记误差向量
 
 $$
-\|\Sigma^{\text{PSD}}-\Sigma_X\|_{\max}\le C_3a_n+r_n,
+\Delta=\widehat\beta-\beta^*.
 $$
 
-其中 $r_n=o(\lambda_n)$。若投影算法精确且总体矩阵 $\Sigma_X$ 正半定，该条件是 CoCoLasso 理论中投影步骤的基本要求。
+### 5.2 Theorem 1 的条件与结论
 
-**条件 A4：** 限制特征值条件成立。存在常数 $\kappa>0$，使得对所有满足锥约束 $\|v_{S^c}\|_1\le3\|v_S\|_1$ 的向量 $v$，有
-
-$$
-v^\top\Sigma^{\text{PSD}}v\ge\kappa\|v\|_2^2.
-$$
-
-**条件 A5：** 正则化参数满足 $\lambda_n\ge2\eta_n$，其中 $\eta_n=\|\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*\|_\infty$。由 A2 和 A3 可得
+**条件 A1：修正统计量的集中性。** 论文假设存在常数 $C,c$、误差尺度函数 $\zeta$ 和 $\varepsilon_0>0$，使得对任意 $\varepsilon\le\varepsilon_0$，逐元素有
 
 $$
-\eta_n\le \|\tilde{\rho}-\Sigma_X\beta^*\|_\infty+\|\Sigma^{\text{PSD}}-\Sigma_X\|_{\max}\|\beta^*\|_1=O_p(a_n+r_n).
+\Pr(|\widetilde\Sigma_{ij}-\Sigma_{ij}|\ge\varepsilon)\le C\exp(-cn\varepsilon^2\zeta^{-1}),
 $$
 
-所以通常取 $\lambda_n\asymp\sqrt{\log p/n}$ 即可满足 A5。
+$$
+\Pr(|\tilde\rho_j-\rho_j|\ge\varepsilon)\le C\exp(-cns^{-2}\varepsilon^2\zeta^{-1}).
+$$
 
-### 5.3 基本不等式
+其中 $\zeta$ 汇总响应噪声、测量误差强度和误差模型常数；加性误差和乘性误差在论文 Lemma 1 和 Lemma 2 中都满足该条件。
+
+**条件 A2：PSD 投影误差不放大阶数。** 因为真实 $\Sigma$ 本身半正定，而 $\widehat\Sigma$ 是离 $\widetilde\Sigma$ 最近的半正定矩阵之一，所以
+
+$$
+\|\widehat\Sigma-\widetilde\Sigma\|_{\max}\le\|\Sigma-\widetilde\Sigma\|_{\max}.
+$$
+
+由三角不等式得到论文公式 (2.3)：
+
+$$
+\|\widehat\Sigma-\Sigma\|_{\max}\le2\|\widetilde\Sigma-\Sigma\|_{\max}.
+$$
+
+这一步是 CoCoLasso 理论的关键：投影保证凸性，同时保持最大范数收敛阶数。
+
+**条件 A3：真实 Gram 矩阵满足限制特征值条件。** 论文使用真实 $\Sigma$ 上的兼容/限制特征值条件：
+
+$$
+0<\Lambda=\min_{v\ne0,\ \|v_{S^c}\|_1\le3\|v_S\|_1}\frac{v^\top\Sigma v}{\|v\|_2^2}.
+$$
+
+**条件 A4：正则化参数尺度。** Theorem 1 要求 $\lambda$ 足够大以控制随机误差项，又不能大到破坏信号：
+
+$$
+s\sqrt{\zeta\log p/n}\lesssim\lambda\le\min(\varepsilon_0,12\varepsilon_0\|\beta_S^*\|_\infty).
+$$
+
+在这些条件下，论文 Theorem 1 给出高概率误差界：存在常数 $C,c$，使得概率至少为 $1-C\exp(-c\log p)$ 时，
+
+$$
+\|\widehat\beta-\beta^*\|_2\le C\lambda\sqrt{s}/\Lambda, \qquad \|\widehat\beta-\beta^*\|_1\le C\lambda s/\Lambda,
+$$
+
+$$
+\|X(\widehat\beta-\beta^*)\|_2/\sqrt n\le C\lambda\sqrt{s}/\sqrt\Lambda.
+$$
+
+因此 $s^2\zeta\log p/n\to0$ 保证 Theorem 1 中用于控制随机项的下界可以趋小；若同时选择的 $\lambda$ 还满足 $\lambda\sqrt{s}/\Lambda\to0$ 和 $\lambda s/\Lambda\to0$，上述误差界随样本量增长而收缩。实际应用中 $\lambda$ 由校准交叉验证选择；理论条件说明的是高概率误差控制所需的量级。
+
+### 5.3 证明思路和高概率事件
+
+证明从两个高概率事件开始。设 $D=\widehat\Sigma-\Sigma$，$B=\|\beta_S^*\|_\infty$。第一步要控制
+
+$$
+\|\tilde\rho-\widehat\Sigma\beta^*\|_\infty.
+$$
+
+按三角不等式分解：
+
+$$
+\|\tilde\rho-\widehat\Sigma\beta^*\|_\infty
+\le \|\tilde\rho-\rho\|_\infty+\|\rho-\Sigma\beta^*\|_\infty+\|D\beta^*\|_\infty.
+$$
+
+三项分别由论文条件控制：第一项由 A1 的 $\tilde\rho$ 集中性控制；第二项等于 $\|X^\top w/n\|_\infty$，由响应噪声的亚高斯集中性控制；第三项满足 $\|D\beta^*\|_\infty\le sB\|D\|_{\max}$，再由 A2 和 A1 控制。由 $\lambda\gtrsim s\sqrt{\zeta\log p/n}$ 可得高概率事件
+
+$$
+\mathcal E_1=\{\|\tilde\rho-\widehat\Sigma\beta^*\|_\infty\le\lambda/2\}.
+$$
+
+第二步要保证投影误差不会破坏限制特征值。由 A2 可得高概率事件
+
+$$
+\mathcal E_2=\{16s\|D\|_{\max}\le\Lambda/4\}.
+$$
+
+下面的基本不等式和锥约束推导都在 $\mathcal E_1\cap\mathcal E_2$ 上进行；论文用 union bound 得到该事件的概率至少为 $1-C\exp(-c\log p)$。
+
+### 5.4 基本不等式
+
+为和代码说明中的记号保持一致，以下把 $\widehat\Sigma$ 记为 $\Sigma^{\text{PSD}}$，并写
+
+$$
+L_n(\beta)=\frac{1}{2}\beta^\top\Sigma^{\text{PSD}}\beta-\tilde\rho^\top\beta.
+$$
 
 由于 $\widehat\beta$ 最小化目标函数，必有
 
 $$
-L_n(\widehat\beta)+\lambda_n\|\widehat\beta\|_1\le L_n(\beta^*)+\lambda_n\|\beta^*\|_1.
+L_n(\widehat\beta)+\lambda\|\widehat\beta\|_1\le L_n(\beta^*)+\lambda\|\beta^*\|_1.
 $$
 
 代入 $\widehat\beta=\beta^*+\Delta$，展开二次项：
@@ -773,30 +840,30 @@ $$
 代回基本不等式：
 
 $$
-\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta-\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)+\lambda_n\|\beta^*+\Delta\|_1\le\lambda_n\|\beta^*\|_1.
+\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta-\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)+\lambda\|\beta^*+\Delta\|_1\le\lambda\|\beta^*\|_1.
 $$
 
 移项：
 
 $$
-\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)+\lambda_n(\|\beta^*\|_1-\|\beta^*+\Delta\|_1).
+\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)+\lambda(\|\beta^*\|_1-\|\beta^*+\Delta\|_1).
 $$
 
-### 5.4 随机误差项界
+### 5.5 随机误差项界
 
 由 Hölder 不等式，
 
 $$
-\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)\le\|\Delta\|_1\|\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*\|_\infty=\eta_n\|\Delta\|_1.
+\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)\le\|\Delta\|_1\|\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*\|_\infty.
 $$
 
-由 A5，$\eta_n\le\lambda_n/2$，所以
+在事件 $\mathcal E_1$ 上，$\|\tilde\rho-\Sigma^{\text{PSD}}\beta^*\|_\infty\le\lambda/2$，所以
 
 $$
-\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)\le\frac{\lambda_n}{2}\|\Delta\|_1.
+\Delta^\top(\tilde{\rho}-\Sigma^{\text{PSD}}\beta^*)\le\frac{\lambda}{2}\|\Delta\|_1.
 $$
 
-### 5.5 惩罚项分解
+### 5.6 惩罚项分解与锥约束
 
 因为 $\beta^*_{S^c}=0$，有 $\|\beta^*\|_1=\|\beta^*_S\|_1$。同时
 
@@ -813,40 +880,62 @@ $$
 代回基本不等式：
 
 $$
-\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\frac{\lambda_n}{2}(\|\Delta_S\|_1+\|\Delta_{S^c}\|_1)+\lambda_n(\|\Delta_S\|_1-\|\Delta_{S^c}\|_1).
+\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\frac{\lambda}{2}(\|\Delta_S\|_1+\|\Delta_{S^c}\|_1)+\lambda(\|\Delta_S\|_1-\|\Delta_{S^c}\|_1).
 $$
 
 合并同类项：
 
 $$
-\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\frac{3\lambda_n}{2}\|\Delta_S\|_1-\frac{\lambda_n}{2}\|\Delta_{S^c}\|_1.
+\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\frac{3\lambda}{2}\|\Delta_S\|_1-\frac{\lambda}{2}\|\Delta_{S^c}\|_1.
 $$
 
 左边非负，因此右边非负，得到 $\|\Delta_{S^c}\|_1\le3\|\Delta_S\|_1$，即锥约束。
 
-### 5.6 L2 误差界
+### 5.7 L2 误差界
 
-在锥约束下，由 A4，$\Delta^\top\Sigma^{\text{PSD}}\Delta\ge\kappa\|\Delta\|_2^2$。又由上一节的不等式去掉负项，
-
-$$
-\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\frac{3\lambda_n}{2}\|\Delta_S\|_1.
-$$
-
-利用 Cauchy 不等式，$\|\Delta_S\|_1\le\sqrt{s}\|\Delta_S\|_2\le\sqrt{s}\|\Delta\|_2$，因此
+上一步只使用了 $\Sigma^{\text{PSD}}\succeq0$ 得到锥约束。为了得到 $L_2$ 界，需要回到真实 Gram 矩阵 $\Sigma$ 上使用限制特征值条件。由 $D=\Sigma^{\text{PSD}}-\Sigma$，有
 
 $$
-\frac{\kappa}{2}\|\Delta\|_2^2\le\frac{3\lambda_n}{2}\sqrt{s}\|\Delta\|_2.
+\Delta^\top\Sigma\Delta=\Delta^\top\Sigma^{\text{PSD}}\Delta-\Delta^\top D\Delta.
 $$
 
-若 $\Delta\ne0$，两边除以 $\|\Delta\|_2$，得到
+在锥约束下，$\|\Delta\|_1\le4\|\Delta_S\|_1$，所以
 
 $$
-\|\widehat\beta-\beta^*\|_2=\|\Delta\|_2\le\frac{3\sqrt{s}\lambda_n}{\kappa}.
+|\Delta^\top D\Delta|\le\|D\|_{\max}\|\Delta\|_1^2\le16\|D\|_{\max}\|\Delta_S\|_1^2.
 $$
 
-若 $\Delta=0$，该不等式显然成立。因此只要 $\sqrt{s}\lambda_n\to0$，就有 $\|\widehat\beta-\beta^*\|_2\xrightarrow{p}0$。
+再由限制特征值条件，$\|\Delta_S\|_1^2\le s\|\Delta\|_2^2\le s(\Delta^\top\Sigma\Delta)/\Lambda$。在事件 $\mathcal E_2$ 上，$16s\|D\|_{\max}\le\Lambda/4$，因此
 
-### 5.7 L1 误差界
+$$
+|\Delta^\top D\Delta|\le\frac{1}{4}\Delta^\top\Sigma\Delta.
+$$
+
+由基本不等式去掉负项可得
+
+$$
+\frac{1}{2}\Delta^\top\Sigma^{\text{PSD}}\Delta\le\frac{3\lambda}{2}\|\Delta_S\|_1.
+$$
+
+结合 $\Delta^\top\Sigma^{\text{PSD}}\Delta\ge\Delta^\top\Sigma\Delta-|\Delta^\top D\Delta|\ge(3/4)\Delta^\top\Sigma\Delta$，得到
+
+$$
+\Delta^\top\Sigma\Delta\le C\lambda\|\Delta_S\|_1.
+$$
+
+再用 $\|\Delta_S\|_1\le\sqrt{s}\|\Delta\|_2$ 和 $\Delta^\top\Sigma\Delta\ge\Lambda\|\Delta\|_2^2$，得到
+
+$$
+\Lambda\|\Delta\|_2^2\le C\lambda\sqrt{s}\|\Delta\|_2.
+$$
+
+若 $\Delta\ne0$，两边除以 $\|\Delta\|_2$；若 $\Delta=0$，结论显然成立。因此
+
+$$
+\|\widehat\beta-\beta^*\|_2\le C\lambda\sqrt{s}/\Lambda.
+$$
+
+### 5.8 L1 误差界
 
 由锥约束，$\|\Delta\|_1=\|\Delta_S\|_1+\|\Delta_{S^c}\|_1\le4\|\Delta_S\|_1$。再用 $\|\Delta_S\|_1\le\sqrt{s}\|\Delta\|_2$，得到
 
@@ -857,48 +946,98 @@ $$
 代入 L2 界：
 
 $$
-\|\widehat\beta-\beta^*\|_1\le4\sqrt{s}\frac{3\sqrt{s}\lambda_n}{\kappa}=\frac{12s\lambda_n}{\kappa}.
+\|\widehat\beta-\beta^*\|_1\le C\lambda s/\Lambda.
 $$
 
-因此只要 $s\lambda_n\to0$，就有 $\|\widehat\beta-\beta^*\|_1\xrightarrow{p}0$。
+因此只要 $s\lambda/\Lambda\to0$，就有 $\|\widehat\beta-\beta^*\|_1\xrightarrow{p}0$。
 
-### 5.8 预测误差界
+### 5.9 预测误差界
 
-预测误差可定义为 $\Delta^\top\Sigma_X\Delta$。若 $\lambda_{\max}(\Sigma_X)\le C_\Sigma$，则
-
-$$
-\Delta^\top\Sigma_X\Delta\le C_\Sigma\|\Delta\|_2^2.
-$$
-
-代入 L2 界：
+论文中的预测误差为
 
 $$
-\Delta^\top\Sigma_X\Delta\le C_\Sigma\frac{9s\lambda_n^2}{\kappa^2}.
+\|X\Delta\|_2^2/n=\Delta^\top\Sigma\Delta.
 $$
 
-因此若 $s\lambda_n^2\to0$，则预测误差收敛到 0。
-
-### 5.9 结论
-
-在 A1 到 A5 条件下，若 $\lambda_n\asymp\sqrt{\log p/n}$ 且 $\sqrt{s}\lambda_n\to0$，则 CoCoLasso 估计量满足
+由上一节已经得到 $\Delta^\top\Sigma\Delta\le C\lambda\|\Delta_S\|_1$，再代入 $\|\Delta_S\|_1\le\sqrt{s}\|\Delta\|_2\le C\lambda s/\Lambda$，可得
 
 $$
-\|\widehat\beta-\beta^*\|_2=O_p(\sqrt{s}\lambda_n).
+\Delta^\top\Sigma\Delta\le C\lambda^2s/\Lambda.
 $$
 
-若进一步 $s\lambda_n\to0$，则
+取平方根即
 
 $$
-\|\widehat\beta-\beta^*\|_1=O_p(s\lambda_n)=o_p(1).
+\|X(\widehat\beta-\beta^*)\|_2/\sqrt n\le C\lambda\sqrt{s}/\sqrt\Lambda.
 $$
 
-这就是相合性。
+### 5.10 结论
+
+在 Theorem 1 的条件下，若 $s^2\zeta\log p/n\to0$ 并选取满足论文要求且使误差界右端趋小的 $\lambda$，则 CoCoLasso 估计量满足
+
+$$
+\|\widehat\beta-\beta^*\|_2=O_p(\lambda\sqrt{s}/\Lambda).
+$$
+
+同时
+
+$$
+\|\widehat\beta-\beta^*\|_1=O_p(\lambda s/\Lambda), \qquad \|X(\widehat\beta-\beta^*)\|_2/\sqrt n=O_p(\lambda\sqrt{s}/\sqrt\Lambda).
+$$
+
+这就是论文 Theorem 1 的误差界逻辑。若这些右端项趋于 0，即得到相合性。
+
+### 5.11 Theorem 2：符号一致性与支持恢复
+
+Theorem 2 讨论的是变量选择一致性，条件比 Theorem 1 更强。它额外要求真实 Gram 矩阵在真实支持集 $S$ 上满足两个条件。
+
+**条件 B1：不可表示条件（irrepresentable condition）。** 存在 $\gamma>0$，使得
+
+$$
+\|\Sigma_{S^c,S}\Sigma_{S,S}^{-1}\|_\infty\le1-\gamma.
+$$
+
+这个条件限制无关变量不能被相关变量过强表示，是干净数据 Lasso 符号一致性的经典条件。
+
+**条件 B2：活动集 Gram 矩阵可逆。** 存在 $C_{\min}>0$，使得
+
+$$
+\lambda_{\min}(\Sigma_{S,S})=C_{\min}>0.
+$$
+
+在 A1 的集中性条件、B1、B2 以及适当的 $\lambda$ 和 $\varepsilon$ 选择下，论文 Theorem 2 得到以下结果：
+
+1. CoCoLasso 目标存在唯一解，且其支持集包含在真实支持集内，即 $\operatorname{supp}(\widehat\beta)\subseteq S$。
+2. 活动集上的最大范数误差满足 $\|\widehat\beta_S-\beta_S^*\|_\infty\le\kappa_\infty\lambda$，其中 $\kappa_\infty$ 由 $\|\Sigma_{S,S}^{-1}\|_\infty$ 和 $C_{\min}$ 控制。
+3. 若 beta-min 条件 $\min_{j\in S}|\beta_j^*|\ge\kappa_\infty\lambda$ 成立，则 $\operatorname{sign}(\widehat\beta_S)=\operatorname{sign}(\beta_S^*)$。
+
+证明逻辑使用 primal-dual witness 构造。第一步只在真实支持集 $S$ 上解受限问题，得到候选解 $\widehat\beta_S$，并令 $\widehat\beta_{S^c}=0$。第二步写出 KKT 条件：活动集上必须满足
+
+$$
+\widehat\Sigma_{S,S}\widehat\beta_S-\tilde\rho_S+\lambda u_S=0,
+$$
+
+非活动集上必须存在对偶变量 $u_{S^c}$ 使得
+
+$$
+\widehat\Sigma_{S^c,S}\widehat\beta_S-\tilde\rho_{S^c}+\lambda u_{S^c}=0, \qquad \|u_{S^c}\|_\infty<1.
+$$
+
+第三步用 B1 控制干净 Gram 矩阵下的对偶变量，用 A1 和 PSD 投影误差控制污染校正后的扰动，从而证明严格对偶可行性 $\|u_{S^c}\|_\infty<1$。严格对偶可行性意味着非活动变量系数为 0，且解唯一。第四步对活动集解显式展开：
+
+$$
+\widehat\beta_S-\beta_S^*=\widehat\Sigma_{S,S}^{-1}(\tilde\rho_S-\widehat\Sigma_{S,S}\beta_S^* - \lambda u_S),
+$$
+
+再用逆矩阵扰动界和集中性条件得到 $\ell_\infty$ 误差界。最后，若最小信号强度大于该误差界，估计值不会跨过 0，因此符号恢复正确。
+
+代码没有显式检查 B1、B2 或 beta-min 条件；这些是理论保证条件，不是运行时校验条件。
 
 ---
 
-## 6. 渐进正态性证明
+## 6. 渐进正态性证明（额外推导，非 PDF 主结论）
 
-本节说明在低维或 oracle 条件下的渐进正态性。需要强调：高维 Lasso 估计量本身含有 $\ell_1$ 惩罚偏差，通常不能在不去偏、不 refit、不额外限制 $\lambda_n$ 的情况下直接得到普通渐进正态性。当前项目没有实现去偏估计器，因此这里证明的是当前修正二次目标在低维或惩罚足够小条件下的渐进正态性。
+本节不是 Datta & Zou (2017) PDF 的主定理内容，而是说明在低维或 oracle 条件下可以怎样得到渐进正态性。需要强调：高维 Lasso 估计量本身含有 $\ell_1$ 惩罚偏差，通常不能在不去偏、不 refit、不额外限制 $\lambda_n$ 的情况下直接得到普通渐进正态性。当前项目没有实现去偏估计器，因此这里证明的是当前修正二次目标在额外条件下的数学性质。
 
 ### 6.1 固定维条件
 
@@ -1111,7 +1250,7 @@ $$
 | `_ratio_matrix_from_mask()` 和 `_validate_ratio_matrix()` | 2.4.2 缺失数据校正（比例矩阵） |
 | `_corrected_covariance_multiplicative()` | 2.4.3 乘性误差校正 |
 | `_admm_proj()` | 2.5.1 ADMM 投影 |
-| `_hm_proj()` | 2.5.2 HM-Lasso 投影 |
+| `_hm_proj()` | 2.5.2 HM-Lasso 投影（扩展选项，非 PDF 标准投影） |
 | `_lasso_covariance()` | 2.6.1 坐标下降求解器 |
 | `_lasso_sklearn()` | 2.6.2 sklearn 求解器 |
 | `_cv_covariance_matrices()` | 2.7 Lambda 路径与交叉验证 |
@@ -1136,7 +1275,7 @@ $$
 
 第一，项目实现的标准 CoCoLasso 主线符合 CoCoLasso 的基本结构：修正协方差矩阵、PSD 投影、凸 Lasso 求解和交叉验证选择正则化参数。
 
-第二，在修正矩阵集中、PSD 投影误差可控、限制特征值成立、$\lambda_n\asymp\sqrt{\log p/n}$ 且 $\sqrt{s}\lambda_n\to0$ 的条件下，估计量满足 L2 相合性；若 $s\lambda_n\to0$，还满足 L1 相合性。
+第二，在论文 Theorem 1 的集中性条件、PSD 投影误差控制、真实 Gram 矩阵限制特征值条件以及 $s^2\zeta\log p/n\to0$ 可使随机项下界趋小的缩放下，估计量满足 $\ell_2$、$\ell_1$ 和预测误差界；当这些误差界右端趋于 0 时得到相合性。
 
 第三，渐进正态性不是高维惩罚估计量自动具备的无条件结论。它需要固定维、oracle 活动集、惩罚项满足 $\sqrt n\lambda_n\to0$，或额外实现去偏估计。本项目当前没有实现去偏估计、活动集 refit 的标准误估计或置信区间输出，因此文档中的渐进正态性是算法对应理论目标在额外条件下的数学性质。
 

@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local reference PDFs
+docx/COCOLASSO FOR HIGH-DIMENSIONAL ERROR-IN-VARIABLES REGRESSION.pdf
