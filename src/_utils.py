@@ -9,13 +9,18 @@ import numpy as np
 from typing import Optional, Dict
 
 
-def _make_cv_folds(n: int, K: int) -> list:
+def _make_cv_folds(n: int, K: int, random_state: Optional[int] = None) -> list:
     """创建 K 个非空随机折，当 n 不能被 K 整除时保留所有样本。"""
     if K < 2:
         raise ValueError("K 必须至少为 2")
     if K > n:
         raise ValueError("K 不能超过样本数")
-    return [fold for fold in np.array_split(np.random.permutation(n), K) if len(fold) > 0]
+    if random_state is None:
+        permutation = np.random.permutation(n)
+    else:
+        rng = np.random.default_rng(random_state)
+        permutation = rng.permutation(n)
+    return [fold for fold in np.array_split(permutation, K) if len(fold) > 0]
 
 
 def _validate_common_options(

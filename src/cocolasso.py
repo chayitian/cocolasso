@@ -70,6 +70,7 @@ def _cv_covariance_matrices(
     etol: float = 1e-4,
     noise: str = "additive",
     mode: str = "ADMM",
+    random_state: Optional[int] = None,
 ) -> Dict:
     """
     为 CoCoLasso 交叉验证创建投影后的 PSD 协方差矩阵。
@@ -100,7 +101,7 @@ def _cv_covariance_matrices(
         'list_rho_lasso', 'list_rho_error'
     """
     n = Z.shape[0]
-    fold_indices = _make_cv_folds(n, K)
+    fold_indices = _make_cv_folds(n, K, random_state=random_state)
 
     if global_preprocessed is None:
         global_preprocessed = _preprocess_data(
@@ -233,6 +234,7 @@ def _pathwise_coordinate_descent(
     mode: str = "ADMM",
     solver: str = "coordinate_descent",
     alpha: Optional[float] = None,
+    random_state: Optional[int] = None,
 ) -> Dict:
     """
     CoCoLasso 的路径坐标下降算法。
@@ -263,6 +265,7 @@ def _pathwise_coordinate_descent(
     solver : str, 'coordinate_descent' 或 'sklearn'
         Lasso 求解器。'coordinate_descent' 为协方差形式坐标下降（支持 SCAD），
         'sklearn' 为 Cholesky 分解 + sklearn Lasso（仅支持 lasso 惩罚）
+    random_state : int or None, 交叉验证折分随机种子
 
     返回
     ----------
@@ -317,7 +320,7 @@ def _pathwise_coordinate_descent(
         K=K, Z=Z, y=y, p=p,
         center_Z=center_Z, scale_Z=scale_Z, center_y=center_y, scale_y=scale_y,
         mu=mu, tau=tau, global_preprocessed=preprocessed,
-        etol=etol, noise=noise, mode=mode,
+        etol=etol, noise=noise, mode=mode, random_state=random_state,
     )
     list_matrices_lasso = output["list_matrices_lasso"]
     list_matrices_error = output["list_matrices_error"]
@@ -464,6 +467,8 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
         是否对响应 y 中心化。
     scale_y : bool, 默认=True
         是否对响应 y 标准化。
+    random_state : int or None, 默认=None
+        交叉验证折分随机种子；None 时沿用全局 numpy 随机状态。
 
     属性
     ----------
@@ -520,6 +525,7 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
         center_y=True,
         scale_y=True,
         solver="coordinate_descent",
+        random_state=None,
     ):
         self.alpha = alpha
         self.noise = noise
@@ -538,6 +544,7 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
         self.center_y = center_y
         self.scale_y = scale_y
         self.solver = solver
+        self.random_state = random_state
 
     def fit(self, Z, y):
         """
@@ -576,6 +583,7 @@ class CoCoLasso(BaseEstimator, RegressorMixin):
             mode=self.mode,
             solver=self.solver,
             alpha=self.alpha,
+            random_state=self.random_state,
         )
 
         self.coef_scaled_ = result["beta_opt"]

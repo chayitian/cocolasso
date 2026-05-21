@@ -35,6 +35,7 @@ def coco(
     mode: str = "ADMM",
     solver: str = "coordinate_descent",
     alpha: Optional[float] = None,
+    random_state: Optional[int] = None,
 ) -> Dict:
     """
     CoCoLasso / BD-CoCoLasso 的主入口函数。
@@ -68,6 +69,7 @@ def coco(
     mode : str, 'ADMM' 或 'HM'
     solver : str, 'coordinate_descent' 或 'sklearn'
     alpha : float or None, 固定正则化强度；None 时通过交叉验证选择
+    random_state : int or None, 交叉验证折分随机种子
 
     返回
     ----------
@@ -85,6 +87,7 @@ def coco(
             lambda_factor=lambda_factor, step=step, K=K, mu=mu, tau=tau,
             etol=etol, optTol=optTol, earlyStopping_max=earlyStopping_max,
             noise=noise, penalty=penalty, mode=mode, solver=solver, alpha=alpha,
+            random_state=random_state,
         )
     else:
         return _pathwise_coordinate_descent(
@@ -93,6 +96,7 @@ def coco(
             lambda_factor=lambda_factor, step=step, K=K, mu=mu, tau=tau,
             etol=etol, optTol=optTol, earlyStopping_max=earlyStopping_max,
             noise=noise, penalty=penalty, mode=mode, solver=solver, alpha=alpha,
+            random_state=random_state,
         )
 
 
@@ -120,6 +124,7 @@ def generalcoco(
     mode: str = "ADMM",
     solver: str = "coordinate_descent",
     alpha: Optional[float] = None,
+    random_state: Optional[int] = None,
 ) -> Dict:
     """
     三块 BD-CoCoLasso（混合加性误差 + 缺失数据）。
@@ -151,6 +156,7 @@ def generalcoco(
     mode : str, 'ADMM' 或 'HM'
     solver : str, 'coordinate_descent' 或 'sklearn'
     alpha : float or None, 固定正则化强度；None 时通过交叉验证选择
+    random_state : int or None, 交叉验证折分随机种子
 
     返回
     ----------
@@ -165,6 +171,7 @@ def generalcoco(
         lambda_factor=lambda_factor, step=step, K=K, mu=mu, tau=tau,
         etol=etol, optTol=optTol, earlyStopping_max=earlyStopping_max,
         penalty=penalty, mode=mode, solver=solver, alpha=alpha,
+        random_state=random_state,
     )
 
 

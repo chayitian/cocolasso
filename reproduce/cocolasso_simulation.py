@@ -121,11 +121,16 @@ def compute_metrics(beta_hat: np.ndarray, beta_true: np.ndarray,
     return {"C": C, "IC": IC, "PE": PE, "SE": SE}
 
 
-def bootstrap_se(values: np.ndarray, n_bootstrap: int = 500) -> float:
+def bootstrap_se(values: np.ndarray, n_bootstrap: int = 500,
+                 random_state: int = None) -> float:
     n = len(values)
     boot_medians = np.zeros(n_bootstrap)
+    rng = None if random_state is None else np.random.default_rng(random_state)
     for b in range(n_bootstrap):
-        sample = np.random.choice(values, size=n, replace=True)
+        if rng is None:
+            sample = np.random.choice(values, size=n, replace=True)
+        else:
+            sample = rng.choice(values, size=n, replace=True)
         boot_medians[b] = np.median(sample)
     return float(np.std(boot_medians))
 
@@ -148,7 +153,8 @@ def run_single_experiment(error_type: str,
         Z=Z, y=y, n=n, p=p,
         step=100, K=K_FOLDS, mu=1.0, tau=tau,
         etol=1e-4, noise=error_type, block=False,
-        penalty="lasso", mode="ADMM", solver="sklearn"
+        penalty="lasso", mode="ADMM", solver="sklearn",
+        random_state=seed + 20000,
     )
     beta_proc = result["beta_opt"]
     beta_hat = unscale_coefficients(
@@ -229,10 +235,13 @@ def run_simulation(n_mc: int = N_MONTE_CARLO,
             "Tau": tau,
         }
 
-        for key in ["C", "IC", "PE", "SE"]:
+        for idx, key in enumerate(["C", "IC", "PE", "SE"]):
             vals = np.array(mc_results[key])
             row[f"{key}_median"] = np.median(vals)
-            row[f"{key}_se"] = bootstrap_se(vals, n_bootstrap)
+            row[f"{key}_se"] = bootstrap_se(
+                vals, n_bootstrap,
+                random_state=100000 + si * 10 + idx,
+            )
 
         all_results.append(row)
 

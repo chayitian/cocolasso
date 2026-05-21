@@ -426,7 +426,7 @@ $$
 
 对路径上每个 $\lambda$：
 
-1. 将数据随机分为 $K$ 折
+1. 将数据随机分为 $K$ 折；若传入 `random_state`，折分由该局部随机种子控制
 2. 对每折 $k$：
    - 仅用训练折估计中心化、标准化、缺失比例和加性误差尺度
    - 用训练折预处理参数转换测试折，避免全局预处理数据泄漏
@@ -625,6 +625,7 @@ $$
 | `penalty` | 默认 `"lasso"`；`"SCAD"` 仅由 `solver="coordinate_descent"` 支持 |
 | `alpha` | 固定正则化强度；为 `None` 时沿 lambda 路径做交叉验证自动选择 |
 | `mode` | `"ADMM"` 或 `"HM"`，控制 PSD 投影方式 |
+| `random_state` | 默认 `None`；控制交叉验证折分，`None` 时沿用全局 numpy 随机状态 |
 
 复现实验脚本位于 `reproduce/cocolasso_simulation.py`：
 
@@ -677,7 +678,8 @@ python reproduce/cocolasso_simulation.py --mode full --n_mc 50 --n_bootstrap 300
 
 - 100 次蒙特卡洛重复，每次使用不同随机种子
 - 报告各指标的中位数
-- Bootstrap 标准误：500 次 bootstrap 重采样估计中位数的标准差
+- 每次蒙特卡洛中，数据生成仍使用该次实验的 `seed`；CV 折分显式使用 `random_state=seed + 20000`
+- Bootstrap 标准误：500 次 bootstrap 重采样估计中位数的标准差；bootstrap 使用按场景和指标固定的局部随机种子
 
 ### 4.1.6 实验流程
 
@@ -686,7 +688,7 @@ python reproduce/cocolasso_simulation.py --mode full --n_mc 50 --n_bootstrap 300
    - 生成 $X\sim N(0,\Sigma_X)$，中心化并按列范数标准化
    - 生成 $y=X\beta^*+\varepsilon$，$\varepsilon\sim N(0,\sigma^2 I)$
    - 根据 `error_type` 和 $\tau$ 生成含误差观测 $Z$
-   - 调用 `coco()` 求解，参数：`step=100, K=5, mu=1.0, penalty="lasso", mode="ADMM", solver="sklearn"`
+   - 调用 `coco()` 求解，参数：`step=100, K=5, mu=1.0, penalty="lasso", mode="ADMM", solver="sklearn", random_state=seed+20000`
    - 将标准化系数还原为原始尺度
    - 计算 C、IC、PE、SE
 3. 汇总所有重复的中位数和 bootstrap 标准误
